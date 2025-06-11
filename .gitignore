@@ -11,7 +11,7 @@ sam/.aws-sam/
 *.template.yaml
 *.log
 
-# macOS (if you ever transfer files from a Mac)
+# macOS
 .DS_Store
 
 # VS Code settings
@@ -25,3 +25,9 @@ data/**/*.csv
 # Misc
 *.zip
 .idea/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+*.nbconvert.ipynb
+*.ipynb~  # backup temporanei
