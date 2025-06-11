@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+
+# AWS & SAM
+.aws-sam/
+sam/.aws-sam/
+*.template.yaml
+*.log
+
+# macOS (if you ever transfer files from a Mac)
+.DS_Store
+
+# VS Code settings
+.vscode/
+
+# Data files
+data/**/*.parquet
+data/**/*.csv
+*.pdf
+
+# Misc
+*.zip
+.idea/
