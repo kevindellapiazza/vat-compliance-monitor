@@ -30,4 +30,4 @@ data/**/*.csv
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 *.nbconvert.ipynb
-*.ipynb~  # backup temporanei
+*.ipynb~ 
