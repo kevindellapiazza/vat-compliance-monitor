@@ -5,6 +5,9 @@ import re
 import datetime
 import os
 import urllib3
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 from decimal import Decimal
 
 # === AWS Clients ===
@@ -15,6 +18,8 @@ table = dynamodb.Table('vcm-invoice-status')
 # === CONFIG ===
 CONFIG_BUCKET = 'vcm-config-kevin'
 CONFIG_FILE = 'allowed-vat-rates.csv'
+PARQUET_OUTPUT_BUCKET = 'vcm-config-kevin'
+PARQUET_OUTPUT_PREFIX = 'data/athena_output/'
 
 # === Load VAT rates from CSV stored in S3 ===
 def load_allowed_rates():
@@ -41,6 +46,15 @@ def send_slack_notification(message):
         payload = {"text": message}
         encoded_data = json.dumps(payload).encode("utf-8")
         http.request("POST", webhook_url, body=encoded_data, headers={"Content-Type": "application/json"})
+
+# === Write Parquet file to S3 ===
+def save_parquet_to_s3(data: dict, key: str):
+    df = pd.DataFrame([data])
+    table_arrow = pa.Table.from_pandas(df)
+    file_path = f"/tmp/{key}.parquet"
+    pq.write_table(table_arrow, file_path)
+    with open(file_path, 'rb') as f:
+        s3.upload_fileobj(f, PARQUET_OUTPUT_BUCKET, f"{PARQUET_OUTPUT_PREFIX}{key}.parquet")
 
 # === Lambda Handler ===
 def lambda_handler(event, context):
@@ -93,20 +107,24 @@ def lambda_handler(event, context):
             reasons.append(f"Math check failed: expected {expected}, got {vat_amount}")
             status = "FAIL"
 
-    # Step 7: Write result to DynamoDB
-    table.put_item(Item={
+    # Step 7: Build structured result
+    result = {
         'invoice_id': invoice_id,
         'country': country or "N/A",
-        'vat_rate': Decimal(str(vat_rate)) if vat_rate else None,
-        'vat_amount': Decimal(str(vat_amount)) if vat_amount else None,
+        'vat_rate': float(vat_rate) if vat_rate else None,
+        'vat_amount': float(vat_amount) if vat_amount else None,
         'supplier_vat_id': vat_id or "N/A",
         'status': status,
         'reason': "; ".join(reasons) or "All checks passed",
         'ocr_text': full_text,
         'timestamp': datetime.datetime.utcnow().isoformat()
-    })
+    }
 
-    # Step 8: Log and notify
+    # Step 8: Save to DynamoDB and Parquet
+    table.put_item(Item={k: (Decimal(str(v)) if isinstance(v, float) else v) for k, v in result.items()})
+    save_parquet_to_s3(result, invoice_id)
+
+    # Step 9: Log and notify
     print("Validation result:", status, reasons)
     slack_message = f"✅ Invoice {invoice_id} validated. Country: {country}, Status: {status}, Reason: {'; '.join(reasons) or 'All checks passed'}"
     send_slack_notification(slack_message)
