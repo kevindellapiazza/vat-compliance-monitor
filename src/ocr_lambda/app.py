@@ -3,8 +3,11 @@ import csv
 import json
 import re
 import datetime
+import os
+import urllib3
 from decimal import Decimal
 
+# === AWS Clients ===
 s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table('vcm-invoice-status')
@@ -13,7 +16,7 @@ table = dynamodb.Table('vcm-invoice-status')
 CONFIG_BUCKET = 'vcm-config-kevin'
 CONFIG_FILE = 'allowed-vat-rates.csv'
 
-# Load VAT rates from CSV stored in S3
+# === Load VAT rates from CSV stored in S3 ===
 def load_allowed_rates():
     response = s3.get_object(Bucket=CONFIG_BUCKET, Key=CONFIG_FILE)
     lines = response['Body'].read().decode('utf-8').splitlines()
@@ -25,17 +28,28 @@ def load_allowed_rates():
         rates.setdefault(country, []).append(rate)
     return rates
 
-# Helper to extract a field with regex
+# === Helper to extract a field with regex ===
 def extract_field(pattern, text):
     match = re.search(pattern, text)
     return match.group(1) if match else None
 
+# === Send message to Slack ===
+def send_slack_notification(message):
+    webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
+    if webhook_url:
+        http = urllib3.PoolManager()
+        payload = {"text": message}
+        encoded_data = json.dumps(payload).encode("utf-8")
+        http.request("POST", webhook_url, body=encoded_data, headers={"Content-Type": "application/json"})
+
+# === Lambda Handler ===
 def lambda_handler(event, context):
+    # Step 1: Get bucket and file key from S3 event
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = event['Records'][0]['s3']['object']['key']
     invoice_id = key.split('/')[-1].replace('.pdf', '')
 
-    # OCR using Textract
+    # Step 2: OCR with Textract
     textract = boto3.client('textract')
     response = textract.detect_document_text(
         Document={'S3Object': {'Bucket': bucket, 'Name': key}}
@@ -43,13 +57,13 @@ def lambda_handler(event, context):
     lines = [b['Text'] for b in response['Blocks'] if b['BlockType'] == 'LINE']
     full_text = '\n'.join(lines)
 
-    # Extract fields
+    # Step 3: Extract key fields from OCR text
     vat_id = extract_field(r'Supplier VAT ID\s*(\w+)', full_text)
     vat_rate_str = extract_field(r'VAT\s*\(([\d.,]+)%\)', full_text)
-    vat_amount_str = extract_field(r'VAT\s*\([\d.,]+%\)\s*([€\d.,]+)', full_text)
-    net_total_str = extract_field(r'Subtotal\s*([€\d.,]+)', full_text)
+    vat_amount_str = extract_field(r'VAT\s*\([\d.,]+%\)\s*([\u20AC\d.,]+)', full_text)
+    net_total_str = extract_field(r'Subtotal\s*([\u20AC\d.,]+)', full_text)
 
-    # Convert values to numbers
+    # Step 4: Normalize numbers
     def normalize(value):
         return float(value.replace('€', '').replace(',', '').strip()) if value else None
 
@@ -57,10 +71,10 @@ def lambda_handler(event, context):
     vat_amount = normalize(vat_amount_str)
     net_total = normalize(net_total_str)
 
-    # Load allowed rates from S3
+    # Step 5: Load config from S3
     allowed_rates = load_allowed_rates()
 
-    # === Validation ===
+    # Step 6: Run validations
     reasons = []
     status = "PASS"
 
@@ -79,9 +93,10 @@ def lambda_handler(event, context):
             reasons.append(f"Math check failed: expected {expected}, got {vat_amount}")
             status = "FAIL"
 
-    # === Save result to DynamoDB ===
+    # Step 7: Write result to DynamoDB
     table.put_item(Item={
         'invoice_id': invoice_id,
+        'country': country or "N/A",
         'vat_rate': Decimal(str(vat_rate)) if vat_rate else None,
         'vat_amount': Decimal(str(vat_amount)) if vat_amount else None,
         'supplier_vat_id': vat_id or "N/A",
@@ -91,7 +106,10 @@ def lambda_handler(event, context):
         'timestamp': datetime.datetime.utcnow().isoformat()
     })
 
+    # Step 8: Log and notify
     print("Validation result:", status, reasons)
+    slack_message = f"✅ Invoice {invoice_id} validated. Country: {country}, Status: {status}, Reason: {'; '.join(reasons) or 'All checks passed'}"
+    send_slack_notification(slack_message)
 
     return {
         'statusCode': 200,
