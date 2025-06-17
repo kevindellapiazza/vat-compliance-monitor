@@ -17,17 +17,21 @@ sam/.aws-sam/
 # VS Code settings
 .vscode/
 
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+*.nbconvert.ipynb
+*.ipynb~
+
 # Data files
 data/**/*.parquet
 data/**/*.csv
 *.pdf
 
+# Preserve Athena folder structure
+!data/athena_output/.keep
+
 # Misc
 *.zip
 .idea/
 
-# Jupyter Notebook
-.ipynb_checkpoints/
-*.ipynb_checkpoints
-*.nbconvert.ipynb
-*.ipynb~ 
