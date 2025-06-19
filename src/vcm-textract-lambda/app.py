@@ -1,3 +1,11 @@
+# Copyright © Kevin Della Piazza
+# For educational and portfolio use only.
+# Do not reuse, copy, or publish without permission.
+
+
+
+
+
 import boto3
 import csv
 import json

@@ -1,13 +1,15 @@
- ✅ VCM Invoice Validation Pipeline
+ # ✅ VCM Invoice Validation Pipeline
 
-A **real-time invoice validation pipeline** built on AWS using Textract, Lambda, SES, DynamoDB, and more.  
+A **real-time invoice validation pipeline** built entirely on AWS using Textract, Lambda, SES, DynamoDB, EventBridge, and more.  
 Designed to simulate real-world FinOps and compliance workflows using a **fully serverless architecture**.
 
 ---
 
 ## 🎯 Why I Built This
 
-> “As a data scientist with could and AI skills, I wanted to simulate a real business scenario using modern AWS tools — combining OCR, compliance logic, real-time alerts, and serverless analytics.”
+> “As a data scientist with cloud and AI skills, I wanted to simulate a real business scenario using modern AWS tools — combining OCR, compliance logic, real-time alerts, and serverless analytics.”
+
+This project is 100% original and was built entirely by me, Kevin Della Piazza, to demonstrate full-stack cloud engineering and automation.
 
 ---
 
@@ -54,20 +56,15 @@ VCM (VAT Compliance Monitor) is a serverless system that:
 vat-compliance-monitor/
 ├── README.md
 ├── .gitignore
-├── sam/ # SAM infrastructure (optional)
-│ └── template.yaml # Blueprint for automated deployment
-├── src/ # Lambda function code
-│ ├── vcm-textract-lambda/ # Textract + validation logic
-│ │ └── lambda_function.py
-│ └── vcm-alert-lambda/ # SES email alerts
-│ ├── lambda_function.py
-│ └── requirements.txt
+├── sam/ # Optional SAM Infrastructure
+│ └── template.yaml
+├── src/ # Lambda functions
+│ ├── vcm-textract-lambda/
+│ └── vcm-alert-lambda/
 ├── data/
-│ ├── allowed-vat-rates.csv # VAT rule config
-│ └── athena_output/.keep # Athena query output folder
-├── docs/
-│ └── .keep # Future diagrams, screenshots
-
+│ ├── allowed-vat-rates.csv
+│ └── athena_output/
+├── docs/ # Future screenshots / diagrams
 
 ---
 
@@ -81,4 +78,24 @@ vat-compliance-monitor/
 - ✅ Athena queries for historical analysis
 - ✅ Optional SAM template for automated deployment
 
+---
 
+## 📦 Deployment Notes
+
+This project was originally deployed manually using the AWS Console.  
+The included `sam/template.yaml` file is a clean infrastructure blueprint that allows to redeploy using AWS SAM if desired.
+
+
+---
+
+## 🛡️ License & Use
+
+This project is published for **educational and portfolio purposes only**.  
+All code was written by Kevin Della Piazza.
+
+You may:
+- ✅ Read and learn from this project
+- ✅ Ask to test it as part of a job application
+- ❌ Not reuse the code in other portfolios, applications, or commercial tools
+
+All rights reserved © Kevin Della Piazza 
