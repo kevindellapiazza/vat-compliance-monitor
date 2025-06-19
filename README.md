@@ -26,9 +26,22 @@ VCM (VAT Compliance Monitor) is a serverless system that:
 
 ---
 
+## 🌐 Interactive Preview
+
+Test the full invoice compliance pipeline via this cloud-hosted Streamlit interface:  
+🔗 **[Launch Validation App](https://vat-compliance-monitor-lfentssvkbaggt5qrfekkb.streamlit.app/)**
+
+You can upload a sample invoice to trigger real-time processing, validation, and alerts.
+
+
+
+
+---
+
+
 ## 🔧 Architecture & Technologies
 
-### AWS Services Used
+AWS Services Used
 
 - **S3** — Stores uploaded invoice PDFs
 - **Textract** — Extracts data from scanned PDFs
