@@ -44,11 +44,10 @@ def normalize_number(value: str):
     if not value:
         return None, None
     value = value.strip()
-    # Match currency symbol
-    symbol_match = re.match(r'^([€$£₣]|CHF)?\s*([0-9.,]+)', value)
-    if not symbol_match:
+    match = re.match(r'^([€$£₣]|CHF)?\s*([0-9.,]+)', value)
+    if not match:
         return None, None
-    symbol, number = symbol_match.groups()
+    symbol, number = match.groups()
     currency = {
         '€': 'EUR', '$': 'USD', '£': 'GBP', '₣': 'CHF', 'CHF': 'CHF'
     }.get(symbol, 'UNKNOWN')
@@ -60,6 +59,24 @@ def normalize_number(value: str):
         return float(number), currency
     except:
         return None, None
+
+def extract_key_value_map(blocks):
+    key_map = {}
+    block_map = {b['Id']: b for b in blocks}
+    for b in blocks:
+        if b['BlockType'] == 'KEY_VALUE_SET' and 'KEY' in b.get('EntityTypes', []):
+            key_text, val_text = '', ''
+            for rel in b.get('Relationships', []):
+                if rel['Type'] == 'CHILD':
+                    key_text = ' '.join(block_map[cid]['Text'] for cid in rel['Ids'] if block_map[cid]['BlockType'] == 'WORD')
+                if rel['Type'] == 'VALUE':
+                    val_block = block_map.get(rel['Ids'][0])
+                    for val_rel in val_block.get('Relationships', []):
+                        if val_rel['Type'] == 'CHILD':
+                            val_text = ' '.join(block_map[cid]['Text'] for cid in val_rel['Ids'] if block_map[cid]['BlockType'] == 'WORD')
+            if key_text and val_text:
+                key_map[key_text.strip().lower()] = val_text.strip()
+    return key_map
 
 def send_slack_notification(msg):
     hook = os.environ.get("SLACK_WEBHOOK_URL")
@@ -89,14 +106,31 @@ def lambda_handler(event, context):
         Document={'S3Object': {'Bucket': bucket, 'Name': key}},
         FeatureTypes=["FORMS", "TABLES"]
     )
-    lines = [b['Text'] for b in resp['Blocks'] if b['BlockType'] == 'LINE']
+    blocks = resp['Blocks']
+    lines = [b['Text'] for b in blocks if b['BlockType'] == 'LINE']
     full_text = '\n'.join(lines)
+    kv_map = extract_key_value_map(blocks)
 
-    # 3. Extract fields
-    vat_id_raw = extract_field(r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration))\s*[:\-]?\s*([A-Za-z0-9]+)', full_text)
-    vat_rate_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?', full_text)
-    vat_amount_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£₣CHF]+)', full_text)
-    net_total_str = extract_field(r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£₣CHF]+)', full_text)
+    # 3. Extract fields: regex primary, fallback to form fields
+    vat_id_raw = extract_field(
+        r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration))\s*[:\-]?\s*([A-Za-z0-9]+)',
+        full_text
+    ) or kv_map.get("vat id") or kv_map.get("vat number") or kv_map.get("vat registration")
+
+    vat_rate_str = extract_field(
+        r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?',
+        full_text
+    ) or kv_map.get("vat rate")
+
+    vat_amount_str = extract_field(
+        r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£₣CHF]+)',
+        full_text
+    ) or kv_map.get("vat amount")
+
+    net_total_str = extract_field(
+        r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£₣CHF]+)',
+        full_text
+    ) or kv_map.get("net total")
 
     # 4. Normalize
     raw_rate = float(vat_rate_str.replace(',', '.')) if vat_rate_str else None
@@ -127,7 +161,6 @@ def lambda_handler(event, context):
             reasons.append(f"Math check failed: expected {expected}, got {vat_amount}")
             status = "FAIL"
 
-    # 6. Build & persist result
     result = {
         'invoice_id': invoice_id,
         'country': country or "N/A",
@@ -148,3 +181,4 @@ def lambda_handler(event, context):
         f"Invoice {invoice_id} | Country: {country} | Status: {status} | Currency: {currency} | Reason: {result['reason']}"
     )
     return {'statusCode': 200, 'body': json.dumps('Validation complete')}
+
