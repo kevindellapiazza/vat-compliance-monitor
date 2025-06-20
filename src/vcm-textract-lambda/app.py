@@ -77,12 +77,13 @@ def lambda_handler(event, context):
     key    = event['Records'][0]['s3']['object']['key']
     invoice_id = os.path.basename(key).replace('.pdf','')
 
-    # 2. Textract OCR
+    # 2. Textract OCR using AnalyzeDocument for better structure
     tx = boto3.client('textract')
-    resp = tx.detect_document_text(
-        Document={'S3Object': {'Bucket': bucket, 'Name': key}}
+    resp = tx.analyze_document(
+        Document={'S3Object': {'Bucket': bucket, 'Name': key}},
+        FeatureTypes=["FORMS", "TABLES"]
     )
-    lines = [b['Text'] for b in resp['Blocks'] if b['BlockType']=='LINE']
+    lines = [b['Text'] for b in resp['Blocks'] if b['BlockType'] == 'LINE']
     full_text = '\n'.join(lines)
 
     # 3. Extract fields (more resilient patterns)
@@ -154,4 +155,3 @@ def lambda_handler(event, context):
         f"Invoice {invoice_id} | Country: {country} | Status: {status} | Reason: {result['reason']}"
     )
     return {'statusCode': 200, 'body': json.dumps('Validation complete')}
-
