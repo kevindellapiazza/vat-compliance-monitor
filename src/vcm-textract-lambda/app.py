@@ -43,7 +43,7 @@ def extract_field(pattern, text):
 def normalize_number(value: str):
     if not value:
         return None
-    v = value.strip().replace('€', '').replace('$', '')
+    v = value.strip().replace('€','').replace('$','').replace('CHF','')
     if '.' in v and ',' in v:
         v = v.replace('.', '').replace(',', '.')
     else:
@@ -74,33 +74,39 @@ def save_parquet_to_s3(data: dict, key: str):
 def lambda_handler(event, context):
     # 1. S3 Event
     bucket = event['Records'][0]['s3']['bucket']['name']
-    key = event['Records'][0]['s3']['object']['key']
-    invoice_id = os.path.basename(key).replace('.pdf', '')
+    key    = event['Records'][0]['s3']['object']['key']
+    invoice_id = os.path.basename(key).replace('.pdf','')
 
-    # 2. Textract OCR with fallback
+    # 2. Textract OCR using AnalyzeDocument for better structure
     tx = boto3.client('textract')
     try:
         resp = tx.analyze_document(
             Document={'S3Object': {'Bucket': bucket, 'Name': key}},
             FeatureTypes=["FORMS", "TABLES"]
         )
-    except Exception as e:
-        print(f"AnalyzeDocument failed: {e}, using DetectDocumentText instead.")
-        resp = tx.detect_document_text(
-            Document={'S3Object': {'Bucket': bucket, 'Name': key}}
-        )
+    except Exception:
+        resp = tx.detect_document_text(Document={'S3Object': {'Bucket': bucket, 'Name': key}})
 
     lines = [b['Text'] for b in resp['Blocks'] if b['BlockType'] == 'LINE']
     full_text = '\n'.join(lines)
 
-    # 3. Extract fields
+    # 3. Extract fields (multilingual & resilient)
     vat_id_raw = extract_field(
-        r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration))\s*[:\-]?\s*([A-Za-z0-9]+)',
+        r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration)|TVA|USt-IdNr|Partita\s*IVA)\s*[:\-]?\s*([A-Za-z0-9]+)',
         full_text
     )
-    vat_rate_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?', full_text)
-    vat_amount_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£]+)', full_text)
-    net_total_str = extract_field(r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£]+)', full_text)
+    vat_rate_str = extract_field(
+        r'(?:VAT|IVA|TVA|MwSt|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?',
+        full_text
+    )
+    vat_amount_str = extract_field(
+        r'(?:VAT|IVA|TVA|MwSt|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£CHF]+)',
+        full_text
+    )
+    net_total_str = extract_field(
+        r'(?:Subtotal|Net\s*Total|Amount\s*Due|Totale\s*Netto|Total\s*HT)\s*[:\-]?\s*([\u20AC\d.,$£CHF]+)',
+        full_text
+    )
 
     # 4. Normalize
     raw_rate = float(vat_rate_str.replace(',', '.')) if vat_rate_str else None
@@ -116,7 +122,6 @@ def lambda_handler(event, context):
         reasons.append("Missing one or more required fields")
         status = "FAIL"
 
-    # Clean & detect country
     vid = (vat_id_raw or "").replace(' ', '').upper()
     m = re.match(r'^([A-Z]{2})\d+', vid)
     country = m.group(1) if m else None
@@ -127,7 +132,7 @@ def lambda_handler(event, context):
 
     if net_total and vat_rate and vat_amount is not None:
         expected = round(net_total * vat_rate, 2)
-        tolerance = max(0.02, 0.01 * expected)
+        tolerance = 0.02
         if abs(expected - vat_amount) > tolerance:
             reasons.append(f"Math check failed: expected {expected}, got {vat_amount}")
             status = "FAIL"
@@ -152,3 +157,4 @@ def lambda_handler(event, context):
         f"Invoice {invoice_id} | Country: {country} | Status: {status} | Reason: {result['reason']}"
     )
     return {'statusCode': 200, 'body': json.dumps('Validation complete')}
+
