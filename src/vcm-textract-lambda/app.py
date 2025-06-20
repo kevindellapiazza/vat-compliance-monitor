@@ -42,26 +42,32 @@ def extract_field(pattern, text):
 
 def normalize_number(value: str):
     if not value:
-        return None
-    v = value.strip().replace('€','').replace('$','')
-    if '.' in v and ',' in v:
-        v = v.replace('.', '').replace(',', '.')
+        return None, None
+    value = value.strip()
+    # Match currency symbol
+    symbol_match = re.match(r'^([€$£₣]|CHF)?\s*([0-9.,]+)', value)
+    if not symbol_match:
+        return None, None
+    symbol, number = symbol_match.groups()
+    currency = {
+        '€': 'EUR', '$': 'USD', '£': 'GBP', '₣': 'CHF', 'CHF': 'CHF'
+    }.get(symbol, 'UNKNOWN')
+    if '.' in number and ',' in number:
+        number = number.replace('.', '').replace(',', '.')
     else:
-        v = v.replace(',', '')
+        number = number.replace(',', '')
     try:
-        return float(v)
+        return float(number), currency
     except:
-        return None
+        return None, None
 
 def send_slack_notification(msg):
     hook = os.environ.get("SLACK_WEBHOOK_URL")
     if hook:
         http = urllib3.PoolManager()
-        http.request(
-            "POST", hook,
-            body=json.dumps({"text": msg}).encode(),
-            headers={"Content-Type": "application/json"}
-        )
+        http.request("POST", hook,
+                     body=json.dumps({"text": msg}).encode(),
+                     headers={"Content-Type": "application/json"})
 
 def save_parquet_to_s3(data: dict, key: str):
     df = pd.DataFrame([data])
@@ -74,10 +80,10 @@ def save_parquet_to_s3(data: dict, key: str):
 def lambda_handler(event, context):
     # 1. S3 Event
     bucket = event['Records'][0]['s3']['bucket']['name']
-    key    = event['Records'][0]['s3']['object']['key']
-    invoice_id = os.path.basename(key).replace('.pdf','')
+    key = event['Records'][0]['s3']['object']['key']
+    invoice_id = os.path.basename(key).replace('.pdf', '')
 
-    # 2. Textract OCR using AnalyzeDocument for better structure
+    # 2. Textract OCR
     tx = boto3.client('textract')
     resp = tx.analyze_document(
         Document={'S3Object': {'Bucket': bucket, 'Name': key}},
@@ -86,20 +92,17 @@ def lambda_handler(event, context):
     lines = [b['Text'] for b in resp['Blocks'] if b['BlockType'] == 'LINE']
     full_text = '\n'.join(lines)
 
-    # 3. Extract fields (more resilient patterns)
-    vat_id_raw = extract_field(
-        r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration))\s*[:\-]?\s*([A-Za-z0-9]+)',
-        full_text
-    )
-    vat_rate_str   = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?', full_text)
-    vat_amount_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£]+)', full_text)
-    net_total_str  = extract_field(r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£]+)', full_text)
+    # 3. Extract fields
+    vat_id_raw = extract_field(r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration))\s*[:\-]?\s*([A-Za-z0-9]+)', full_text)
+    vat_rate_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?', full_text)
+    vat_amount_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£₣CHF]+)', full_text)
+    net_total_str = extract_field(r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£₣CHF]+)', full_text)
 
     # 4. Normalize
-    raw_rate   = float(vat_rate_str.replace(',','.')) if vat_rate_str else None
-    vat_rate   = raw_rate if raw_rate and raw_rate <= 1 else (raw_rate/100 if raw_rate else None)
-    vat_amount = normalize_number(vat_amount_str)
-    net_total  = normalize_number(net_total_str)
+    raw_rate = float(vat_rate_str.replace(',', '.')) if vat_rate_str else None
+    vat_rate = raw_rate if raw_rate and raw_rate <= 1 else (raw_rate / 100 if raw_rate else None)
+    vat_amount, currency = normalize_number(vat_amount_str)
+    net_total, _ = normalize_number(net_total_str)
 
     # 5. Load config & validate
     allowed = load_allowed_rates()
@@ -109,8 +112,7 @@ def lambda_handler(event, context):
         reasons.append("Missing one or more required fields")
         status = "FAIL"
 
-    # Clean & detect country
-    vid = (vat_id_raw or "").replace(' ','').upper()
+    vid = (vat_id_raw or "").replace(' ', '').upper()
     m = re.match(r'^([A-Z]{2})\d+', vid)
     country = m.group(1) if m else None
 
@@ -118,10 +120,9 @@ def lambda_handler(event, context):
         reasons.append(f"Invalid VAT rate {vat_rate} for {country}")
         status = "FAIL"
 
-    # ✅ Math check with tolerance
     if net_total and vat_rate and vat_amount is not None:
         expected = round(net_total * vat_rate, 2)
-        tolerance = 0.02  # Allow small rounding mismatch
+        tolerance = 0.02
         if abs(expected - vat_amount) > tolerance:
             reasons.append(f"Math check failed: expected {expected}, got {vat_amount}")
             status = "FAIL"
@@ -133,18 +134,17 @@ def lambda_handler(event, context):
         'vat_rate': vat_rate,
         'vat_amount': vat_amount,
         'supplier_vat_id': vid or "N/A",
+        'currency': currency or "N/A",
         'status': status,
         'reason': "; ".join(reasons) or "All checks passed",
         'ocr_text': full_text,
         'timestamp': datetime.datetime.utcnow().isoformat()
     }
-    table.put_item(
-        Item={k: (Decimal(str(v)) if isinstance(v, float) else v) for k, v in result.items()}
-    )
+
+    table.put_item(Item={k: (Decimal(str(v)) if isinstance(v, float) else v) for k, v in result.items()})
     save_parquet_to_s3(result, invoice_id)
 
-    # 7. Notify
     send_slack_notification(
-        f"Invoice {invoice_id} | Country: {country} | Status: {status} | Reason: {result['reason']}"
+        f"Invoice {invoice_id} | Country: {country} | Status: {status} | Currency: {currency} | Reason: {result['reason']}"
     )
     return {'statusCode': 200, 'body': json.dumps('Validation complete')}
