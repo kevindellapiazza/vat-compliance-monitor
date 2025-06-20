@@ -91,18 +91,9 @@ def lambda_handler(event, context):
         r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration))\s*[:\-]?\s*([A-Za-z0-9]+)',
         full_text
     )
-    vat_rate_str   = extract_field(
-        r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?',
-        full_text
-    )
-    vat_amount_str = extract_field(
-        r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£]+)',
-        full_text
-    )
-    net_total_str  = extract_field(
-        r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£]+)',
-        full_text
-    )
+    vat_rate_str   = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?', full_text)
+    vat_amount_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£]+)', full_text)
+    net_total_str  = extract_field(r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£]+)', full_text)
 
     # 4. Normalize
     raw_rate   = float(vat_rate_str.replace(',','.')) if vat_rate_str else None
@@ -127,10 +118,12 @@ def lambda_handler(event, context):
         reasons.append(f"Invalid VAT rate {vat_rate} for {country}")
         status = "FAIL"
 
+    # ✅ Math check with tolerance
     if net_total and vat_rate and vat_amount is not None:
-        exp = round(net_total * vat_rate, 2)
-        if abs(exp - vat_amount) > 0.5:
-            reasons.append(f"Math check failed: expected {exp}, got {vat_amount}")
+        expected = round(net_total * vat_rate, 2)
+        tolerance = 0.02  # Allow small rounding mismatch
+        if abs(expected - vat_amount) > tolerance:
+            reasons.append(f"Math check failed: expected {expected}, got {vat_amount}")
             status = "FAIL"
 
     # 6. Build & persist result
