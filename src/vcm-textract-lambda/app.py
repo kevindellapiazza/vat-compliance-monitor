@@ -25,6 +25,12 @@ CONFIG_FILE = 'config/allowed-vat-rates.csv'
 PARQUET_OUTPUT_BUCKET = 'vcm-config-kevin'
 PARQUET_OUTPUT_PREFIX = 'data/athena_output/'
 
+# === Country Fix Map (fuzzy OCR correction) ===
+FUZZY_COUNTRY_FIX = {
+    '1T': 'IT', 'lt': 'LT', 'de': 'DE', 'fr': 'FR', 'es': 'ES',
+    'ch': 'CH', 'be': 'BE', 'nl': 'NL'
+}
+
 def load_allowed_rates():
     resp = s3.get_object(Bucket=CONFIG_BUCKET, Key=CONFIG_FILE)
     lines = resp['Body'].read().decode('utf-8').splitlines()
@@ -95,12 +101,10 @@ def save_parquet_to_s3(data: dict, key: str):
         s3.upload_fileobj(f, PARQUET_OUTPUT_BUCKET, f"{PARQUET_OUTPUT_PREFIX}{key}.parquet")
 
 def lambda_handler(event, context):
-    # 1. S3 Event
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = event['Records'][0]['s3']['object']['key']
     invoice_id = os.path.basename(key).replace('.pdf', '')
 
-    # 2. Textract OCR
     tx = boto3.client('textract')
     resp = tx.analyze_document(
         Document={'S3Object': {'Bucket': bucket, 'Name': key}},
@@ -111,34 +115,33 @@ def lambda_handler(event, context):
     full_text = '\n'.join(lines)
     kv_map = extract_key_value_map(blocks)
 
-    # 3. Extract fields: regex primary, fallback to form fields
+    # Extract VAT fields
     vat_id_raw = extract_field(
-        r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration))\s*[:\-]?\s*([A-Za-z0-9]+)',
+        r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration))\s*[:\-]?\s*([A-Za-z0-9\-\s]+)',
         full_text
     ) or kv_map.get("vat id") or kv_map.get("vat number") or kv_map.get("vat registration")
 
-    vat_rate_str = extract_field(
-        r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?',
-        full_text
-    ) or kv_map.get("vat rate")
+    vat_rate_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?', full_text) or kv_map.get("vat rate")
+    vat_amount_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£₣CHF]+)', full_text) or kv_map.get("vat amount")
+    net_total_str = extract_field(r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£₣CHF]+)', full_text) or kv_map.get("net total")
 
-    vat_amount_str = extract_field(
-        r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£₣CHF]+)',
-        full_text
-    ) or kv_map.get("vat amount")
-
-    net_total_str = extract_field(
-        r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£₣CHF]+)',
-        full_text
-    ) or kv_map.get("net total")
-
-    # 4. Normalize
     raw_rate = float(vat_rate_str.replace(',', '.')) if vat_rate_str else None
     vat_rate = raw_rate if raw_rate and raw_rate <= 1 else (raw_rate / 100 if raw_rate else None)
     vat_amount, currency = normalize_number(vat_amount_str)
     net_total, _ = normalize_number(net_total_str)
 
-    # 5. Load config & validate
+    # Clean VAT ID and country code
+    vid = (vat_id_raw or "").upper().replace(" ", "").replace("-", "")
+    country = re.match(r'^([A-Z]{2})\d+', vid)
+    country = country.group(1) if country else None
+
+    # Fix fuzzy country codes
+    if country and country.upper() in FUZZY_COUNTRY_FIX:
+        country = FUZZY_COUNTRY_FIX[country.upper()]
+    elif country:
+        country = country.upper()
+
+    # Validation
     allowed = load_allowed_rates()
     reasons, status = [], "PASS"
 
@@ -146,18 +149,13 @@ def lambda_handler(event, context):
         reasons.append("Missing one or more required fields")
         status = "FAIL"
 
-    vid = (vat_id_raw or "").replace(' ', '').upper()
-    m = re.match(r'^([A-Z]{2})\d+', vid)
-    country = m.group(1) if m else None
-
     if not country or country not in allowed or vat_rate not in allowed[country]:
         reasons.append(f"Invalid VAT rate {vat_rate} for {country}")
         status = "FAIL"
 
     if net_total and vat_rate and vat_amount is not None:
         expected = round(net_total * vat_rate, 2)
-        tolerance = 0.02
-        if abs(expected - vat_amount) > tolerance:
+        if abs(expected - vat_amount) > 0.02:
             reasons.append(f"Math check failed: expected {expected}, got {vat_amount}")
             status = "FAIL"
 
@@ -176,9 +174,5 @@ def lambda_handler(event, context):
 
     table.put_item(Item={k: (Decimal(str(v)) if isinstance(v, float) else v) for k, v in result.items()})
     save_parquet_to_s3(result, invoice_id)
-
-    send_slack_notification(
-        f"Invoice {invoice_id} | Country: {country} | Status: {status} | Currency: {currency} | Reason: {result['reason']}"
-    )
+    send_slack_notification(f"Invoice {invoice_id} | Country: {country} | Status: {status} | Reason: {result['reason']}")
     return {'statusCode': 200, 'body': json.dumps('Validation complete')}
-
