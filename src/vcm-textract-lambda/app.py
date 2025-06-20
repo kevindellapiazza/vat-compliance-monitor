@@ -131,6 +131,10 @@ def lambda_handler(event, context):
     m = re.match(r'^([A-Z]{2})\d+', vid)
     country = m.group(1) if m else None
 
+    if not m:
+        reasons.append(f"Invalid VAT ID format: {vid}")
+        status = "FAIL"
+
     if not country or country not in allowed or vat_rate not in allowed[country]:
         reasons.append(f"Invalid VAT rate {vat_rate} for {country}")
         status = "FAIL"
