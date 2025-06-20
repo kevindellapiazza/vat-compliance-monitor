@@ -103,6 +103,20 @@ def lambda_handler(event, context):
         full_text
     )
 
+    # 3.1 Extract invoice metadata
+    inv_no   = extract_field(
+        r'(?:Invoice\s*(?:No\.?|#))\s*[:\-]?\s*([A-Z0-9-]+)',
+        full_text
+    )
+    inv_date = extract_field(
+        r'(?:Invoice\s*Date|Date)\s*[:\-]?\s*([\d]{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})',
+        full_text
+    )
+    due_date = extract_field(
+        r'(?:Due\s*Date)\s*[:\-]?\s*([\d]{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})',
+        full_text
+    )
+
     # 4. Normalize
     raw_rate   = float(vat_rate_str.replace(',','.')) if vat_rate_str else None
     vat_rate   = raw_rate if raw_rate and raw_rate <= 1 else (raw_rate/100 if raw_rate else None)
@@ -135,6 +149,9 @@ def lambda_handler(event, context):
     # 6. Build & persist result
     result = {
         'invoice_id': invoice_id,
+        'invoice_no': inv_no or "N/A",
+        'invoice_date': inv_date or "N/A",
+        'due_date': due_date or "N/A",
         'country': country or "N/A",
         'vat_rate': vat_rate,
         'vat_amount': vat_amount,
@@ -151,7 +168,7 @@ def lambda_handler(event, context):
 
     # 7. Notify
     send_slack_notification(
-        f"Invoice {invoice_id} | Country: {country} | Status: {status} | Reason: {result['reason']}"
+        f"Invoice {invoice_id} | No: {inv_no} | Date: {inv_date} | Country: {country} | Status: {status} | Reason: {result['reason']}"
     )
     return {'statusCode': 200, 'body': json.dumps('Validation complete')}
 
