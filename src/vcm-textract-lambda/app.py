@@ -25,21 +25,6 @@ CONFIG_FILE = 'config/allowed-vat-rates.csv'
 PARQUET_OUTPUT_BUCKET = 'vcm-config-kevin'
 PARQUET_OUTPUT_PREFIX = 'data/athena_output/'
 
-# === Country Fix Map ===
-FUZZY_COUNTRY_FIX = {
-    '1T': 'IT', 'lt': 'LT', 'de': 'DE', 'fr': 'FR', 'es': 'ES',
-    'ch': 'CH', 'be': 'BE', 'nl': 'NL'
-}
-
-# === Currency tolerance (max diff before FAIL) ===
-CURRENCY_TOLERANCE = {
-    'CHF': 0.05,
-    'EUR': 0.02,
-    'USD': 0.02,
-    'GBP': 0.02,
-    'UNKNOWN': 0.02
-}
-
 def load_allowed_rates():
     resp = s3.get_object(Bucket=CONFIG_BUCKET, Key=CONFIG_FILE)
     lines = resp['Body'].read().decode('utf-8').splitlines()
@@ -57,49 +42,26 @@ def extract_field(pattern, text):
 
 def normalize_number(value: str):
     if not value:
-        return None, None
-    value = value.strip()
-    match = re.match(r'^([€$£₣]|CHF)?\s*([0-9.,]+)', value)
-    if not match:
-        return None, None
-    symbol, number = match.groups()
-    currency = {
-        '€': 'EUR', '$': 'USD', '£': 'GBP', '₣': 'CHF', 'CHF': 'CHF'
-    }.get(symbol, 'UNKNOWN')
-    if '.' in number and ',' in number:
-        number = number.replace('.', '').replace(',', '.')
+        return None
+    v = value.strip().replace('€', '').replace('$', '')
+    if '.' in v and ',' in v:
+        v = v.replace('.', '').replace(',', '.')
     else:
-        number = number.replace(',', '')
+        v = v.replace(',', '')
     try:
-        return float(number), currency
+        return float(v)
     except:
-        return None, currency
-
-def extract_key_value_map(blocks):
-    key_map = {}
-    block_map = {b['Id']: b for b in blocks}
-    for b in blocks:
-        if b['BlockType'] == 'KEY_VALUE_SET' and 'KEY' in b.get('EntityTypes', []):
-            key_text, val_text = '', ''
-            for rel in b.get('Relationships', []):
-                if rel['Type'] == 'CHILD':
-                    key_text = ' '.join(block_map[cid]['Text'] for cid in rel['Ids'] if block_map[cid]['BlockType'] == 'WORD')
-                if rel['Type'] == 'VALUE':
-                    val_block = block_map.get(rel['Ids'][0])
-                    for val_rel in val_block.get('Relationships', []):
-                        if val_rel['Type'] == 'CHILD':
-                            val_text = ' '.join(block_map[cid]['Text'] for cid in val_rel['Ids'] if block_map[cid]['BlockType'] == 'WORD')
-            if key_text and val_text:
-                key_map[key_text.strip().lower()] = val_text.strip()
-    return key_map
+        return None
 
 def send_slack_notification(msg):
     hook = os.environ.get("SLACK_WEBHOOK_URL")
     if hook:
         http = urllib3.PoolManager()
-        http.request("POST", hook,
-                     body=json.dumps({"text": msg}).encode(),
-                     headers={"Content-Type": "application/json"})
+        http.request(
+            "POST", hook,
+            body=json.dumps({"text": msg}).encode(),
+            headers={"Content-Type": "application/json"}
+        )
 
 def save_parquet_to_s3(data: dict, key: str):
     df = pd.DataFrame([data])
@@ -110,42 +72,43 @@ def save_parquet_to_s3(data: dict, key: str):
         s3.upload_fileobj(f, PARQUET_OUTPUT_BUCKET, f"{PARQUET_OUTPUT_PREFIX}{key}.parquet")
 
 def lambda_handler(event, context):
+    # 1. S3 Event
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = event['Records'][0]['s3']['object']['key']
     invoice_id = os.path.basename(key).replace('.pdf', '')
 
+    # 2. Textract OCR with fallback
     tx = boto3.client('textract')
-    resp = tx.analyze_document(
-        Document={'S3Object': {'Bucket': bucket, 'Name': key}},
-        FeatureTypes=["FORMS", "TABLES"]
-    )
-    blocks = resp['Blocks']
-    lines = [b['Text'] for b in blocks if b['BlockType'] == 'LINE']
+    try:
+        resp = tx.analyze_document(
+            Document={'S3Object': {'Bucket': bucket, 'Name': key}},
+            FeatureTypes=["FORMS", "TABLES"]
+        )
+    except Exception as e:
+        print(f"AnalyzeDocument failed: {e}, using DetectDocumentText instead.")
+        resp = tx.detect_document_text(
+            Document={'S3Object': {'Bucket': bucket, 'Name': key}}
+        )
+
+    lines = [b['Text'] for b in resp['Blocks'] if b['BlockType'] == 'LINE']
     full_text = '\n'.join(lines)
-    kv_map = extract_key_value_map(blocks)
 
+    # 3. Extract fields
     vat_id_raw = extract_field(
-        r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration))\s*[:\-]?\s*([A-Za-z0-9\-\s]+)',
+        r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration))\s*[:\-]?\s*([A-Za-z0-9]+)',
         full_text
-    ) or kv_map.get("vat id") or kv_map.get("vat number") or kv_map.get("vat registration")
+    )
+    vat_rate_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?', full_text)
+    vat_amount_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£]+)', full_text)
+    net_total_str = extract_field(r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£]+)', full_text)
 
-    vat_rate_str   = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?', full_text) or kv_map.get("vat rate")
-    vat_amount_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£₣CHF]+)', full_text) or kv_map.get("vat amount")
-    net_total_str  = extract_field(r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£₣CHF]+)', full_text) or kv_map.get("net total")
-
+    # 4. Normalize
     raw_rate = float(vat_rate_str.replace(',', '.')) if vat_rate_str else None
     vat_rate = raw_rate if raw_rate and raw_rate <= 1 else (raw_rate / 100 if raw_rate else None)
-    vat_amount, currency = normalize_number(vat_amount_str)
-    net_total, _ = normalize_number(net_total_str)
+    vat_amount = normalize_number(vat_amount_str)
+    net_total = normalize_number(net_total_str)
 
-    vid = (vat_id_raw or "").upper().replace(" ", "").replace("-", "")
-    country = re.match(r'^([A-Z]{2})\d+', vid)
-    country = country.group(1) if country else None
-    if country and country.upper() in FUZZY_COUNTRY_FIX:
-        country = FUZZY_COUNTRY_FIX[country.upper()]
-    elif country:
-        country = country.upper()
-
+    # 5. Load config & validate
     allowed = load_allowed_rates()
     reasons, status = [], "PASS"
 
@@ -153,32 +116,39 @@ def lambda_handler(event, context):
         reasons.append("Missing one or more required fields")
         status = "FAIL"
 
+    # Clean & detect country
+    vid = (vat_id_raw or "").replace(' ', '').upper()
+    m = re.match(r'^([A-Z]{2})\d+', vid)
+    country = m.group(1) if m else None
+
     if not country or country not in allowed or vat_rate not in allowed[country]:
         reasons.append(f"Invalid VAT rate {vat_rate} for {country}")
         status = "FAIL"
 
     if net_total and vat_rate and vat_amount is not None:
         expected = round(net_total * vat_rate, 2)
-        tolerance = CURRENCY_TOLERANCE.get(currency or "UNKNOWN", 0.02)
+        tolerance = max(0.02, 0.01 * expected)
         if abs(expected - vat_amount) > tolerance:
             reasons.append(f"Math check failed: expected {expected}, got {vat_amount}")
             status = "FAIL"
 
+    # 6. Build & persist result
     result = {
         'invoice_id': invoice_id,
         'country': country or "N/A",
         'vat_rate': vat_rate,
         'vat_amount': vat_amount,
         'supplier_vat_id': vid or "N/A",
-        'currency': currency or "N/A",
         'status': status,
         'reason': "; ".join(reasons) or "All checks passed",
         'ocr_text': full_text,
         'timestamp': datetime.datetime.utcnow().isoformat()
     }
-
     table.put_item(Item={k: (Decimal(str(v)) if isinstance(v, float) else v) for k, v in result.items()})
     save_parquet_to_s3(result, invoice_id)
-    send_slack_notification(f"Invoice {invoice_id} | Country: {country} | Status: {status} | Reason: {result['reason']}")
-    return {'statusCode': 200, 'body': json.dumps('Validation complete')}
 
+    # 7. Notify
+    send_slack_notification(
+        f"Invoice {invoice_id} | Country: {country} | Status: {status} | Reason: {result['reason']}"
+    )
+    return {'statusCode': 200, 'body': json.dumps('Validation complete')}
