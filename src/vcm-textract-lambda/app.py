@@ -25,10 +25,19 @@ CONFIG_FILE = 'config/allowed-vat-rates.csv'
 PARQUET_OUTPUT_BUCKET = 'vcm-config-kevin'
 PARQUET_OUTPUT_PREFIX = 'data/athena_output/'
 
-# === Country Fix Map (fuzzy OCR correction) ===
+# === Country Fix Map ===
 FUZZY_COUNTRY_FIX = {
     '1T': 'IT', 'lt': 'LT', 'de': 'DE', 'fr': 'FR', 'es': 'ES',
     'ch': 'CH', 'be': 'BE', 'nl': 'NL'
+}
+
+# === Currency tolerance (max diff before FAIL) ===
+CURRENCY_TOLERANCE = {
+    'CHF': 0.05,
+    'EUR': 0.02,
+    'USD': 0.02,
+    'GBP': 0.02,
+    'UNKNOWN': 0.02
 }
 
 def load_allowed_rates():
@@ -64,7 +73,7 @@ def normalize_number(value: str):
     try:
         return float(number), currency
     except:
-        return None, None
+        return None, currency
 
 def extract_key_value_map(blocks):
     key_map = {}
@@ -115,33 +124,28 @@ def lambda_handler(event, context):
     full_text = '\n'.join(lines)
     kv_map = extract_key_value_map(blocks)
 
-    # Extract VAT fields
     vat_id_raw = extract_field(
         r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration))\s*[:\-]?\s*([A-Za-z0-9\-\s]+)',
         full_text
     ) or kv_map.get("vat id") or kv_map.get("vat number") or kv_map.get("vat registration")
 
-    vat_rate_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?', full_text) or kv_map.get("vat rate")
+    vat_rate_str   = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\(?\s*([\d.,]+)\s*%?\s*\)?', full_text) or kv_map.get("vat rate")
     vat_amount_str = extract_field(r'(?:VAT|IVA|Sales\s*Tax)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£₣CHF]+)', full_text) or kv_map.get("vat amount")
-    net_total_str = extract_field(r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£₣CHF]+)', full_text) or kv_map.get("net total")
+    net_total_str  = extract_field(r'(?:Subtotal|Net\s*Total|Amount\s*Due)\s*[:\-]?\s*([\u20AC\d.,$£₣CHF]+)', full_text) or kv_map.get("net total")
 
     raw_rate = float(vat_rate_str.replace(',', '.')) if vat_rate_str else None
     vat_rate = raw_rate if raw_rate and raw_rate <= 1 else (raw_rate / 100 if raw_rate else None)
     vat_amount, currency = normalize_number(vat_amount_str)
     net_total, _ = normalize_number(net_total_str)
 
-    # Clean VAT ID and country code
     vid = (vat_id_raw or "").upper().replace(" ", "").replace("-", "")
     country = re.match(r'^([A-Z]{2})\d+', vid)
     country = country.group(1) if country else None
-
-    # Fix fuzzy country codes
     if country and country.upper() in FUZZY_COUNTRY_FIX:
         country = FUZZY_COUNTRY_FIX[country.upper()]
     elif country:
         country = country.upper()
 
-    # Validation
     allowed = load_allowed_rates()
     reasons, status = [], "PASS"
 
@@ -155,7 +159,8 @@ def lambda_handler(event, context):
 
     if net_total and vat_rate and vat_amount is not None:
         expected = round(net_total * vat_rate, 2)
-        if abs(expected - vat_amount) > 0.02:
+        tolerance = CURRENCY_TOLERANCE.get(currency or "UNKNOWN", 0.02)
+        if abs(expected - vat_amount) > tolerance:
             reasons.append(f"Math check failed: expected {expected}, got {vat_amount}")
             status = "FAIL"
 
@@ -176,3 +181,4 @@ def lambda_handler(event, context):
     save_parquet_to_s3(result, invoice_id)
     send_slack_notification(f"Invoice {invoice_id} | Country: {country} | Status: {status} | Reason: {result['reason']}")
     return {'statusCode': 200, 'body': json.dumps('Validation complete')}
+
