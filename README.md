@@ -47,40 +47,41 @@ Upload a sample invoice to trigger real-time processing, validation, and alerts.
 
 ## 🚀 How It Works (Step-by-Step)
 
-### 📤 Invoice Upload
-- A user uploads one or more PDF invoices to an **S3** bucket.
+1. 📤 **Invoice Upload**  
+   A user uploads one or more PDF invoices to an **S3** bucket.
 
-### ⚙️ OCR with Textract
-- An S3 event triggers a **Lambda** function.  
-- **Textract** processes each PDF and extracts structured fields including:
-  - Supplier name  
-  - VAT ID  
-  - Total amount  
-  - Line items  
+2. ⚙️ **OCR with Textract**  
+   - An S3 event triggers a **Lambda** function.  
+   - **Textract** processes each PDF and extracts structured fields including:
+     - Supplier name  
+     - VAT ID  
+     - Total amount  
+     - Line items  
 
-### ✅ Validation Logic
-- The Lambda function parses and validates extracted fields against VAT compliance rules:
-  - Valid supplier VAT ID  
-  - Correct VAT rate based on country  
-  - Accurate VAT amount (mathematical validation)  
-- The output is classified as a success or failure based on rule checks.
+3. ✅ **Validation Logic**  
+   - The Lambda function parses and validates extracted fields against VAT compliance rules:
+     - Valid supplier VAT ID  
+     - Correct VAT rate based on country  
+     - Accurate VAT amount (mathematical validation)  
+   - The output is classified as a success or failure based on rule checks.
 
-### 💾 Data Storage
-Validation results are saved in:
-- **DynamoDB** for real-time access and alerting  
-- **Parquet files in S3** for long-term storage and analytics  
+4. 💾 **Data Storage**  
+   Validation results are saved in:
+   - **DynamoDB** for real-time access and alerting  
+   - **Parquet files in S3** for long-term storage and analytics  
 
-### 🔔 Alerting System
-- A **Slack message** is sent for every processed invoice  
-- If validation fails, an **email alert via SES** is sent to notify the appropriate team  
+5. 🔔 **Alerting System**  
+   - A **Slack message** is sent for every processed invoice  
+   - If validation fails, an **email alert via SES** is sent to notify the appropriate team  
 
-### 📊 Analytics Layer
-- Data is made queryable through **Athena + Glue**, enabling analysis of:
-  - VAT trends  
-  - Failure rates  
-  - Invoice volumes  
-  - Validation errors  
-  - Country-level compliance performance  
+6. 📊 **Analytics Layer**  
+   - Data is made queryable through **Athena + Glue**, enabling analysis of:
+     - VAT trends  
+     - Failure rates  
+     - Invoice volumes  
+     - Validation errors  
+     - Country-level compliance performance
+
 
 ---
 
