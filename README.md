@@ -31,6 +31,8 @@ As a data scientist working at the intersection of data science, AI, and cloud, 
 ## ⚡ The Result
 
 A system that is:
+
+- ✅ **Smart Compliance** — flags errors in incorrectly filled invoices and confirms valid ones
 - ✅ **Scalable** — can handle hundreds of invoices per day  
 - ✅ **Cost-effective** — runs on AWS with near-zero infrastructure cost  
 - ✅ **Fully automated** — no human intervention required  
