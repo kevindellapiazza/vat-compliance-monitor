@@ -123,10 +123,6 @@ def lambda_handler(event, context):
     allowed = load_allowed_rates()
     reasons, status = [], "PASS"
 
-    if not (vat_id_raw and vat_rate is not None and vat_amount is not None):
-        reasons.append("Missing one or more required fields")
-        status = "FAIL"
-
     vid = (vat_id_raw or "").replace(' ', '').upper()
     m = re.match(r'^([A-Z]{2})\d+', vid)
     country = m.group(1) if m else None
@@ -134,8 +130,32 @@ def lambda_handler(event, context):
     if not m:
         reasons.append(f"Invalid VAT ID format: {vid}")
         status = "FAIL"
+    if status == "FAIL":
+        result = {
+            'invoice_id': invoice_id,
+            'country': country or "N/A",
+            'vat_rate': vat_rate,
+            'vat_amount': vat_amount,
+            'currency': currency_symbol or "N/A",
+            'supplier_vat_id': vid or "N/A",
+            'status': status,
+            'reason': "; ".join(reasons),
+            'ocr_text': full_text,
+            'timestamp': datetime.datetime.utcnow().isoformat()
+        }
+        table.put_item(Item={k: (Decimal(str(v)) if isinstance(v, float) else v) for k, v in result.items()})
+        save_parquet_to_s3(result, invoice_id)
+        send_slack_notification(
+            f"Invoice {invoice_id} | Country: {country} | Status: {status} | Reason: {result['reason']}"
+        )
+        return {'statusCode': 200, 'body': json.dumps('Validation complete')}
 
-    if not country or country not in allowed or vat_rate not in allowed[country]:
+    # Continue with rest of validation if VAT ID was okay
+    if not (vat_rate is not None and vat_amount is not None):
+        reasons.append("Missing VAT rate or VAT amount")
+        status = "FAIL"
+
+    if country not in allowed or vat_rate not in allowed.get(country, []):
         reasons.append(f"Invalid VAT rate {vat_rate} for {country}")
         status = "FAIL"
 
