@@ -29,7 +29,7 @@ This demo showcases a cloud-native **VAT document analyzer**, built on a serverl
 
 - Upload a single invoice (PDF only) from a supported country: IT, DE, FR, ES, BE, CH.  
 - Or download one of the 5 sample invoices at the end of the page 
-- Instantly see validation results, extracted VAT data, and audit details
+- Instantly see validation results
 
 ⚠️ **Note:** This demo supports one invoice at a time.  
 **Please delete the previous upload before submitting a new one.**
@@ -41,12 +41,13 @@ This demo showcases a cloud-native **VAT document analyzer**, built on a serverl
 Once you upload your invoice, it flows through a live cloud architecture:
 
 1. 📤 Saved to **Amazon S3**  
-2. ⚙️ Processed by **AWS Lambda** using **Textract** for OCR + business rule validation  
-3. 🧾 Results are stored in **DynamoDB**  
-4. 📊 Data becomes queryable via **Glue + Athena**  
-5. 🔔 Alerts are posted to **Slack**, and if validation fails, an email is triggered via **SES**
+2. ⚙️ Processed by **AWS Lambda**, which uses **Textract** for OCR and applies business rule validations:  
+   checks for **valid VAT ID format**, **country-specific VAT %**, and **correct VAT amount** based on total  
+3. 🧾 Results are saved to **DynamoDB**  
+4. 🔔 Alerts are posted to **Slack**, and if validation fails, an email is triggered via **SES**  
+5. 📊 Data becomes queryable via **Glue + Athena**
 
-✅ The **production-ready version** can process **hundreds of invoices in parallel** — drastically reducing manual work and errors with **scalable and close to zero cost infrastructure**.
+✅ The **production-ready version** can process **hundreds of invoices in parallel** — drastically reducing manual work and errors, with **scalable and close to zero cost infrastructure**.
 """)
 
 # ---------- FILE UPLOAD ----------
@@ -94,8 +95,6 @@ if uploaded_file is not None:
                 st.error("❌ AWS credentials not found.")
             except Exception as e:
                 st.error(f"❌ Upload failed: {e}")
-
-
 
 # ---------- SAMPLE INVOICES ----------
 # Add vertical space and a clean horizontal rule
