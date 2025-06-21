@@ -27,6 +27,8 @@ sam/.aws-sam/
 data/**/*.parquet
 data/**/*.csv
 *.pdf
+!data/allowed-vat-rates.csv
+
 
 # Preserve Athena folder structure
 !data/athena_output/.keep
