@@ -1,18 +1,22 @@
- # ✅ VCM — Real-Time VAT Invoice Compliance Powered by AI + AWS Serverless
+# ✅ VCM — Real-Time VAT Invoice Compliance Powered by AI + AWS Serverless
 
 ## 📌 Project Overview
 
-**VCM (VAT Compliance Monitor)** is a real-time invoice validation pipeline built entirely on a fully serverless AWS architecture. It transforms unstructured PDF invoices into validated, auditable, and analytics-ready records in just seconds — without any manual steps.  
-Built using **AWS Textract**, **Lambda**, **DynamoDB**, **SES**, and **Slack**, VCM enforces VAT compliance rules at scale and delivers real-time feedback through alerting systems. From OCR to validation to storage, everything runs automatically — no servers, no queues, no spreadsheets.  
+**VCM (VAT Compliance Monitor)** is a real-time invoice validation pipeline built entirely on a fully serverless AWS architecture.  
+It transforms unstructured PDF invoices into validated, auditable, and analytics-ready records in just seconds — without any manual steps.  
+
+Built using **AWS Textract**, **Lambda**, **DynamoDB**, **SES**, and **Slack**, VCM enforces VAT compliance rules at scale and delivers real-time feedback through alerting systems.  
+From OCR to validation to storage, everything runs automatically — no servers, no queues, no spreadsheets.  
+
 This project simulates a real-world FinOps and compliance automation use case, demonstrating how **AI + Cloud** can streamline business-critical document workflows.
 
 ---
 
 ## 🎯 Why This Matters
 
-💸 Businesses lose dozens of hours per month manually validating invoices for tax compliance.  
-❌ Small VAT mismatches can lead to major penalties, audit failures, or rejected tax filings.  
-📉 Most companies still rely on spreadsheets and shared drives for compliance workflows.  
+- 💸 Businesses lose dozens of hours per month manually validating invoices for tax compliance.  
+- ❌ Small VAT mismatches can lead to major penalties, audit failures, or rejected tax filings.  
+- 📉 Most companies still rely on spreadsheets and shared drives for compliance workflows.  
 
 VCM automates this process end to end — intelligently, scalably, and cost-effectively.  
 As a data scientist working at the intersection of data science, AI, and cloud, I built VCM to reflect the kind of automation modern finance teams need:
@@ -36,7 +40,7 @@ A system that is:
 ## 🌐 Interactive Preview
 
 Test the full invoice compliance pipeline via this cloud-hosted **Streamlit** interface:  
-🔗 **Launch Validation App**  
+🔗 [Launch Validation App](https://vat-compliance-monitor-lfentssvkbaggt5qrfekkb.streamlit.app/)  
 Upload a sample invoice to trigger real-time processing, validation, and alerts.
 
 ---
@@ -49,10 +53,10 @@ Upload a sample invoice to trigger real-time processing, validation, and alerts.
 ### ⚙️ OCR with Textract
 - An S3 event triggers a **Lambda** function.  
 - **Textract** processes each PDF and extracts structured fields including:
-  - Supplier name
-  - VAT ID
-  - Total amount
-  - Line items
+  - Supplier name  
+  - VAT ID  
+  - Total amount  
+  - Line items  
 
 ### ✅ Validation Logic
 - The Lambda function parses and validates extracted fields against VAT compliance rules:
@@ -75,7 +79,8 @@ Validation results are saved in:
   - VAT trends  
   - Failure rates  
   - Invoice volumes  
-  - And more  
+  - Validation errors  
+  - Country-level compliance performance  
 
 ---
 
@@ -94,26 +99,13 @@ Validation results are saved in:
 
 ## 🧠 Skills Demonstrated
 
-### Serverless Cloud Architecture
-Designed and deployed a fully serverless pipeline using AWS (S3, Lambda, DynamoDB, SES, Textract) — eliminating infrastructure overhead while ensuring scalability and resilience.
-
-### Event-Driven Data Workflows
-Built real-time data flows triggered by S3 events and orchestrated via Lambda — enabling immediate processing from document upload to alerting.
-
-### Intelligent Document Processing (OCR)
-Applied AWS Textract to extract structured fields from unstructured PDFs — converting scanned invoices into accurate, machine-readable data.
-
-### Business Rule Enforcement at Scale
-Implemented VAT validation logic (rate, country, required fields) using stateless compute — ensuring compliance is enforced consistently and programmatically.
-
-### Automated Alerting & Escalation
-Integrated Slack for live status updates and SES for automated email alerts — reducing response time to validation errors.
-
-### Analytical Data Modeling
-Persisted results in DynamoDB and Parquet formats — enabling both real-time insight and historical analysis using Athena and Glue.
-
-### Secure, Cost-Optimized Deployment
-Used IAM, event-driven triggers, and AWS's pay-per-use model to build a production-grade solution that’s both secure and cost-efficient — suitable for high-volume, low-latency invoice processing.
+- **AI/ML Integration** – Used AWS Textract to extract structured data from unstructured invoices (OCR).  
+- **Cloud-Native Development** – Designed a fully serverless pipeline using AWS Lambda, S3, and DynamoDB.  
+- **Event-Driven Architecture** – Built real-time workflows triggered by document uploads.  
+- **Compliance Logic Automation** – Applied business rules (e.g., VAT validation) programmatically at scale.  
+- **Alerting & Monitoring** – Integrated Slack and SES for automated validation alerts.  
+- **Data Modeling** – Stored validation results in formats optimized for both live dashboards and analytics (DynamoDB + Parquet).  
+- **Analytics Enablement** – Queried processed data using Athena + Glue for trend and compliance insights.  
 
 ---
 
@@ -130,11 +122,10 @@ This project is published for educational and portfolio purposes only.
 All code was written by **Kevin Della Piazza**.
 
 You may:
-✅ Read and learn from this project  
-✅ Ask to test it as part of a job application  
+- ✅ Read and learn from this project  
+- ✅ Ask to test it as part of a job application  
 
 You may not:
-❌ Reuse the code in other portfolios, applications, or commercial tools  
+- ❌ Reuse the code in other portfolios, applications, or commercial tools  
 
 **All rights reserved © Kevin Della Piazza**
-
