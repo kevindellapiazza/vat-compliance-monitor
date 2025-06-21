@@ -1,114 +1,140 @@
- # ✅ VCM Invoice Validation Pipeline
+ # ✅ VCM — Real-Time VAT Invoice Compliance Powered by AI + AWS Serverless
 
-A **real-time invoice validation pipeline** built entirely on AWS using Textract, Lambda, SES, DynamoDB, EventBridge, and more.  
-Designed to simulate real-world FinOps and compliance workflows using a **fully serverless architecture**.
+## 📌 Project Overview
 
----
-
-## 🎯 Why I Built This
-
-> “As a data scientist with cloud and AI skills, I wanted to simulate a real business scenario using modern AWS tools — combining OCR, compliance logic, real-time alerts, and serverless analytics.”
-
-This project is 100% original and was built entirely by me, Kevin Della Piazza, to demonstrate full-stack cloud engineering and automation.
+**VCM (VAT Compliance Monitor)** is a real-time invoice validation pipeline built entirely on a fully serverless AWS architecture. It transforms unstructured PDF invoices into validated, auditable, and analytics-ready records in just seconds — without any manual steps.  
+Built using **AWS Textract**, **Lambda**, **DynamoDB**, **SES**, and **Slack**, VCM enforces VAT compliance rules at scale and delivers real-time feedback through alerting systems. From OCR to validation to storage, everything runs automatically — no servers, no queues, no spreadsheets.  
+This project simulates a real-world FinOps and compliance automation use case, demonstrating how **AI + Cloud** can streamline business-critical document workflows.
 
 ---
 
-## 🧠 Project Overview
+## 🎯 Why This Matters
 
-VCM (VAT Compliance Monitor) is a serverless system that:
+💸 Businesses lose dozens of hours per month manually validating invoices for tax compliance.  
+❌ Small VAT mismatches can lead to major penalties, audit failures, or rejected tax filings.  
+📉 Most companies still rely on spreadsheets and shared drives for compliance workflows.  
 
-- Ingests PDF invoices from suppliers (via S3)
-- Uses Textract (OCR) to extract key data
-- Validates VAT compliance (e.g., required fields, VAT rate matching)
-- Stores results in DynamoDB and Parquet
-- Sends real-time alerts via **Slack** (always), and **SES email** when validation fails
-- Enables analytics and querying via Athena
+VCM automates this process end to end — intelligently, scalably, and cost-effectively.  
+As a data scientist working at the intersection of data science, AI, and cloud, I built VCM to reflect the kind of automation modern finance teams need:
+
+- 🧠 **AI-powered OCR** (AWS Textract) reads scanned invoices and extracts key tax and payment details  
+- ⚙️ **Serverless compute** (Lambda) applies VAT validation logic — checking for required fields, matching rates, and country-specific rules  
+- 💾 **Fully managed storage** (DynamoDB + Parquet with Athena) supports both real-time feedback and historical reporting  
+- 🔔 **Real-time alerts** via Slack and SES notify the right people at the right time — instantly  
+
+---
+
+## ⚡ The Result
+
+A system that is:
+- ✅ **Scalable** — can handle hundreds of invoices per day  
+- ✅ **Cost-effective** — runs on AWS with near-zero infrastructure cost  
+- ✅ **Fully automated** — no human intervention required  
 
 ---
 
 ## 🌐 Interactive Preview
 
-Test the full invoice compliance pipeline via this cloud-hosted Streamlit interface:  
-🔗 **[Launch Validation App](https://vat-compliance-monitor-lfentssvkbaggt5qrfekkb.streamlit.app/)**
-
-You can upload a sample invoice to trigger real-time processing, validation, and alerts.
-
-
-
+Test the full invoice compliance pipeline via this cloud-hosted **Streamlit** interface:  
+🔗 **Launch Validation App**  
+Upload a sample invoice to trigger real-time processing, validation, and alerts.
 
 ---
 
+## 🚀 How It Works (Step-by-Step)
 
-## 🔧 Architecture & Technologies
+### 📤 Invoice Upload
+- A user uploads one or more PDF invoices to an **S3** bucket.
 
-AWS Services Used
+### ⚙️ OCR with Textract
+- An S3 event triggers a **Lambda** function.  
+- **Textract** processes each PDF and extracts structured fields including:
+  - Supplier name
+  - VAT ID
+  - Total amount
+  - Line items
 
-- **S3** — Stores uploaded invoice PDFs
-- **Textract** — Extracts data from scanned PDFs
-- **Lambda** — Runs parsing, validation, and alert logic
-- **DynamoDB** — Stores validation results
-- **Glue + Athena** — Transforms and queries Parquet data
-- **SES + EventBridge** — Sends email alerts for failed invoices
-- **Slack** — Real-time notification channel
+### ✅ Validation Logic
+- The Lambda function parses and validates extracted fields against VAT compliance rules:
+  - Valid supplier VAT ID  
+  - Correct VAT rate based on country  
+  - Accurate VAT amount (mathematical validation)  
+- The output is classified as a success or failure based on rule checks.
 
----
+### 💾 Data Storage
+Validation results are saved in:
+- **DynamoDB** for real-time access and alerting  
+- **Parquet files in S3** for long-term storage and analytics  
 
-## 🚀 How It Works
+### 🔔 Alerting System
+- A **Slack message** is sent for every processed invoice  
+- If validation fails, an **email alert via SES** is sent to notify the appropriate team  
 
-1. Upload an invoice PDF to **S3**
-2. **S3 triggers a Lambda** → Textract extracts invoice data
-3. The Lambda runs VAT compliance validation logic
-4. Results are saved in **DynamoDB** and **Parquet**
-5. A **Slack alert is always sent**  
-6. If validation **fails**, an **email alert** is sent via **SES**
-
----
-
-## 📂 Folder Structure
-
-vat-compliance-monitor/
-├── README.md
-├── .gitignore
-├── sam/ # Optional SAM Infrastructure
-│ └── template.yaml
-├── src/ # Lambda functions
-│ ├── vcm-textract-lambda/
-│ └── vcm-alert-lambda/
-├── data/
-│ ├── allowed-vat-rates.csv
-│ └── athena_output/
-├── docs/ # Future screenshots / diagrams
+### 📊 Analytics Layer
+- Data is made queryable through **Athena + Glue**, enabling analysis of:
+  - VAT trends  
+  - Failure rates  
+  - Invoice volumes  
+  - And more  
 
 ---
 
-## 📊 Key Features
+## 🔧 Tools & Technologies
 
-- ✅ OCR and invoice parsing with Amazon Textract
-- ✅ Compliance validation for required fields and VAT rules
-- ✅ Real-time Slack alerts for every invoice processed
-- ✅ SES email alerts for failed validations only
-- ✅ DynamoDB + Parquet data storage
-- ✅ Athena queries for historical analysis
-- ✅ Optional SAM template for automated deployment
+- **AWS Textract** – Intelligent document processing (OCR)  
+- **AWS Lambda** – Stateless compute for parsing and validation logic  
+- **Amazon S3** – Object storage for PDFs and Parquet files  
+- **Amazon DynamoDB** – Real-time NoSQL database for structured validation results  
+- **Amazon Athena + AWS Glue** – Serverless analytics for historical queries  
+- **Amazon SES** – Automated email alerts on validation failures  
+- **Slack API** – Real-time operational notifications  
+- **Streamlit** – Frontend interface for testing and demonstration  
+
+---
+
+## 🧠 Skills Demonstrated
+
+### Serverless Cloud Architecture
+Designed and deployed a fully serverless pipeline using AWS (S3, Lambda, DynamoDB, SES, Textract) — eliminating infrastructure overhead while ensuring scalability and resilience.
+
+### Event-Driven Data Workflows
+Built real-time data flows triggered by S3 events and orchestrated via Lambda — enabling immediate processing from document upload to alerting.
+
+### Intelligent Document Processing (OCR)
+Applied AWS Textract to extract structured fields from unstructured PDFs — converting scanned invoices into accurate, machine-readable data.
+
+### Business Rule Enforcement at Scale
+Implemented VAT validation logic (rate, country, required fields) using stateless compute — ensuring compliance is enforced consistently and programmatically.
+
+### Automated Alerting & Escalation
+Integrated Slack for live status updates and SES for automated email alerts — reducing response time to validation errors.
+
+### Analytical Data Modeling
+Persisted results in DynamoDB and Parquet formats — enabling both real-time insight and historical analysis using Athena and Glue.
+
+### Secure, Cost-Optimized Deployment
+Used IAM, event-driven triggers, and AWS's pay-per-use model to build a production-grade solution that’s both secure and cost-efficient — suitable for high-volume, low-latency invoice processing.
 
 ---
 
 ## 📦 Deployment Notes
 
 This project was originally deployed manually using the AWS Console.  
-The included `sam/template.yaml` file is a clean infrastructure blueprint that allows to redeploy using AWS SAM if desired.
-
+The included `sam/template.yaml` file is a clean infrastructure blueprint for redeploying the stack using **AWS SAM** if desired.
 
 ---
 
 ## 🛡️ License & Use
 
-This project is published for **educational and portfolio purposes only**.  
-All code was written by Kevin Della Piazza.
+This project is published for educational and portfolio purposes only.  
+All code was written by **Kevin Della Piazza**.
 
 You may:
-- ✅ Read and learn from this project
-- ✅ Ask to test it as part of a job application
-- ❌ Not reuse the code in other portfolios, applications, or commercial tools
+✅ Read and learn from this project  
+✅ Ask to test it as part of a job application  
 
-All rights reserved © Kevin Della Piazza 
+You may not:
+❌ Reuse the code in other portfolios, applications, or commercial tools  
+
+**All rights reserved © Kevin Della Piazza**
+
