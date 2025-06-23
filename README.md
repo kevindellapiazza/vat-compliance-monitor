@@ -41,16 +41,17 @@ A system that is:
 
 ## 🌐 Interactive Preview
 
-Test the full invoice compliance pipeline via this cloud-hosted **Streamlit** interface:  
+Test the full invoice compliance pipeline via the cloud-hosted Streamlit interface:  
 🔗 [Launch Validation App](https://vat-compliance-monitor-lfentssvkbaggt5qrfekkb.streamlit.app/)  
 Upload a sample invoice to trigger real-time processing, validation, and alerts.
+
 ---
 
 ## 🗺️ System Architecture
 
-![Architecture Diagram](docs/architecture.png)
-
 This diagram shows how invoices flow through the system from upload to validation and analytics.
+
+![Architecture Diagram](docs/architecture.png)
 
 ---
 
