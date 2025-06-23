@@ -51,7 +51,11 @@ Once you upload your invoice, it flows through a live cloud architecture:
 """)
 
 # ---------- FILE UPLOAD ----------
-uploaded_file = st.file_uploader("📎 Upload a PDF Invoice", type=["pdf"])
+uploaded_file = st.file_uploader(
+    "📎 Upload a PDF Invoice (Recommended: < 5 MB)",
+    type=["pdf"],
+    help="For best performance, upload small invoices under 5 MB."
+)
 
 if uploaded_file is not None:
     st.success(f"✅ File selected: {uploaded_file.name}")
