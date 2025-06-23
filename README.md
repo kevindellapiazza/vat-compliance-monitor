@@ -95,6 +95,42 @@ This diagram shows how invoices flow through the system from upload to validatio
 
 ---
 
+## 💰 Cloud Cost Estimate (10,000 Invoices / Month)
+
+This system is optimized for affordability, even at an enterprise scale.  
+All costs are based on **eu-central-1 (Frankfurt)** region, using AWS's public pricing (as of June 2025).
+
+### 🧮 Monthly Cost — 10,000 Invoices (Enterprise Usage)
+
+| Service           | Approx. Cost | Description |
+|------------------|--------------|-------------|
+| **Textract OCR** | $15.00       | 1 page/invoice × 10,000 × $0.0015 |
+| **Lambda compute** | $0.02      | 400 ms @ 256 MB → ~1,000 GB-s |
+| **Lambda requests** | $0.002     | 10,000 × $0.20 per 1M requests |
+| **Amazon SES**   | $1.00        | 10,000 emails @ $0.10 per 1K |
+| **S3 Storage**   | ~$0.20       | PDFs + Parquet (~1 GB/month) |
+| **Glue + Athena**| ~$1.00       | 1 crawler run + ~50 queries |
+| **TOTAL**        | **~$18.25/month** | Fully serverless, 10k invoices processed monthly |
+
+> 🔍 **Textract accounts for ~90% of total cost**. All other components combined cost < $5/month.
+
+---
+
+## 🔐 Security Best Practices (Deployed in eu-central-1)
+
+| Layer     | Practice |
+|-----------|----------|
+| **S3**    | Server-side encryption (SSE-S3) enabled by default |
+| **IAM**   | Each Lambda has least-privilege IAM roles (S3 + logging only) |
+| **SES**   | Sandbox mode; verified sender & recipients only |
+| **Parquet Output** | Stored in private S3 path, queryable only via Athena |
+| **Monitoring** | CloudWatch logs + EventBridge alerts on failures |
+| **No Public Access** | All resources use private IAM-authenticated triggers |
+
+> ✅ Compliant with AWS’s Well-Architected security pillar — safe for real-world invoice data.
+
+---
+
 ## 🔧 Tools & Technologies
 
 - **AWS Textract** – Intelligent document processing (OCR)  
