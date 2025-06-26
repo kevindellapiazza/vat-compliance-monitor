@@ -15,7 +15,7 @@ ses = boto3.client('ses')
 def lambda_handler(event, context):
     print("Received event:", json.dumps(event))
 
-    for record in event:
+    for record in event["Records"]:
         try:
             new_image = record['dynamodb']['NewImage']
             status = new_image['status']['S']
@@ -37,4 +37,3 @@ def lambda_handler(event, context):
             print("Error processing record:", e)
 
     return {'statusCode': 200, 'body': 'Alert(s) processed'}
-
