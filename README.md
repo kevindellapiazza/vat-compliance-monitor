@@ -1,6 +1,11 @@
 # ✅ VCM — Real-Time VAT Invoice Compliance Powered by AI + AWS Serverless
 
-![build-test](https://github.com/kevindellapiazza/vat-compliance-monitor/actions/workflows/build-test.yml/badge.svg)
+
+![CI](https://github.com/kevindellapiazza/vat-compliance-monitor/actions/workflows/build-test.yml/badge.svg)
+
+> Automated validation for European VAT invoices using AWS (Textract, Lambda, DynamoDB, SES, Slack, Streamlit)
+
+---
 
 ## 📌 Project Overview
 
@@ -150,6 +155,20 @@ I'm intentionally publishing this version early to show:
 
 
 ---
+
+## ✅ Continuous Integration (CI)
+
+This project uses **GitHub Actions** to automatically:
+
+- Check code quality with [Ruff](https://docs.astral.sh/ruff/)
+- Run tests with [Pytest](https://docs.pytest.org/)
+
+Every time code is pushed, these checks run to ensure the code is clean and working.
+
+![CI](https://github.com/kevindellapiazza/vat-compliance-monitor/actions/workflows/build-test.yml/badge.svg)
+
+---
+
 
 ## 💰 Cloud Cost Estimate (10,000 Invoices / Month)
 
