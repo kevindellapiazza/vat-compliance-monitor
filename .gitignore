@@ -28,7 +28,7 @@ data/**/*.parquet
 data/**/*.csv
 *.pdf
 !data/allowed-vat-rates.csv
-
+!tests/assets/*.pdf
 
 # Preserve Athena folder structure
 !data/athena_output/.keep
