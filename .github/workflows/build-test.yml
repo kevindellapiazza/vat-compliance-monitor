@@ -19,7 +19,7 @@ jobs:
           pip install pytest ruff
 
       - name: Run Ruff (code linting)
-        run: ruff .
+        run: check .
 
       - name: Run Pytest (unit tests)
         run: pytest
