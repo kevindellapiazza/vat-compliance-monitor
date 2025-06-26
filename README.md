@@ -1,5 +1,7 @@
 # ✅ VCM — Real-Time VAT Invoice Compliance Powered by AI + AWS Serverless
 
+![build-test](https://github.com/kevindellapiazza/vat-compliance-monitor/actions/workflows/build-test.yml/badge.svg)
+
 ## 📌 Project Overview
 
 **VCM (VAT Compliance Monitor)** is a real-time invoice validation pipeline built entirely on a fully serverless AWS architecture.  

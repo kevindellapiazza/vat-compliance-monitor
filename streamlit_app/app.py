@@ -19,19 +19,21 @@ table = dynamodb.Table("vcm-invoice-status")
 st.set_page_config(page_title="VAT Compliance Monitor", page_icon="📄")
 st.title("📤 Upload an Invoice")
 
-st.markdown("""
-This demo showcases a cloud-native **VAT document analyzer**, built on a serverless **AWS architecture** — solving key problems in financial processing:  
+st.markdown(
+    """
+This demo showcases a cloud-native **VAT document analyzer**, built on a serverless
+**AWS architecture** — solving key problems in financial processing:
 **⏱️ Time delays** and **❌ costly manual errors**.
 
 ---
 
 ### 💡 What You Can Try in This Demo
 
-- Upload a single invoice (PDF only) from a supported country: IT, DE, FR, ES, BE, CH.  
-- Or download one of the 5 sample invoices at the end of the page 
+- Upload a single invoice (PDF only) from a supported country: IT, DE, FR, ES, BE, CH.
+- Or download one of the 5 sample invoices at the end of the page
 - Instantly see validation results
 
-⚠️ **Note:** This demo supports one invoice at a time.  
+⚠️ **Note:** This demo supports one invoice at a time.
 **Please delete the previous upload before submitting a new one.**
 
 ---
@@ -40,21 +42,25 @@ This demo showcases a cloud-native **VAT document analyzer**, built on a serverl
 
 Once you upload your invoice, it flows through a live cloud architecture:
 
-1. 📤 Saved to **Amazon S3**  
-2. ⚙️ Processed by **AWS Lambda**, which uses **Textract** for OCR and applies business rule validations:  
-   checks for **valid VAT ID format**, **country-specific VAT %**, and **correct VAT amount** based on total  
-3. 🧾 Results are saved to **DynamoDB**  
-4. 🔔 Alerts are posted to **Slack**, and if validation fails, an email is triggered via **SES**  
+1. 📤 Saved to **Amazon S3**
+2. ⚙️ Processed by **AWS Lambda**, which uses **Textract** for OCR and applies
+   business rule validations: checks for **valid VAT ID format**, **country-specific
+   VAT %**, and **correct VAT amount** based on total
+3. 🧾 Results are saved to **DynamoDB**
+4. 🔔 Alerts are posted to **Slack**, and if validation fails, an email is triggered via **SES**
 5. 📊 Data becomes queryable via **Glue + Athena**
 
-✅ The **production-ready version** can process **hundreds of invoices in parallel** — drastically reducing manual work and errors, with **scalable and close to zero cost infrastructure**.
-""")
+✅ The **production-ready version** can process **hundreds of invoices in parallel** —
+drastically reducing manual work and errors, with
+**scalable and close to zero cost infrastructure**.
+"""
+)
 
 # ---------- FILE UPLOAD ----------
 uploaded_file = st.file_uploader(
     "📎 Upload a PDF Invoice (Recommended: < 5 MB)",
     type=["pdf"],
-    help="For best performance, upload small invoices under 5 MB."
+    help="For best performance, upload small invoices under 5 MB.",
 )
 
 if uploaded_file is not None:
@@ -67,11 +73,9 @@ if uploaded_file is not None:
                 s3_key = f"{FOLDER_NAME}/{uploaded_file.name}"
                 invoice_id = base_filename
 
-                # Upload to S3
                 s3.upload_fileobj(uploaded_file, S3_BUCKET, s3_key)
                 st.success("✅ Upload successful. Validation has been triggered.")
 
-                # Wait for result
                 with st.spinner("Waiting for validation result..."):
                     for _ in range(10):
                         time.sleep(1)
@@ -93,7 +97,10 @@ if uploaded_file is not None:
                             st.error("Error fetching validation result.")
                             break
                     else:
-                        st.warning("⚠️ No validation result found yet. Please wait a few more seconds.")
+                        st.warning(
+                            "⚠️ No validation result found yet. "
+                            "Please wait a few more seconds."
+                        )
 
             except NoCredentialsError:
                 st.error("❌ AWS credentials not found.")
@@ -101,8 +108,10 @@ if uploaded_file is not None:
                 st.error(f"❌ Upload failed: {e}")
 
 # ---------- SAMPLE INVOICES ----------
-# Add vertical space and a clean horizontal rule
-st.markdown("<br><br><br><br><br><hr style='height:4px;border:none;background-color:#bbb;'><br>", unsafe_allow_html=True)
+st.markdown(
+    "<br><br><br><br><br><hr style='height:4px;border:none;background-color:#bbb;'><br>",
+    unsafe_allow_html=True,
+)
 
 st.subheader("📥 Download Sample Invoices")
 st.caption("Use one of these 5 ready-to-test invoices:")
@@ -110,7 +119,7 @@ st.caption("Use one of these 5 ready-to-test invoices:")
 if os.path.exists(SAMPLE_DIR):
     sample_files = [f for f in os.listdir(SAMPLE_DIR) if f.endswith(".pdf")]
 
-    cols = st.columns(len(sample_files))  # One column per file
+    cols = st.columns(len(sample_files))
     for idx, filename in enumerate(sample_files):
         with open(os.path.join(SAMPLE_DIR, filename), "rb") as f:
             with cols[idx]:
@@ -119,7 +128,7 @@ if os.path.exists(SAMPLE_DIR):
                     data=f,
                     file_name=filename,
                     mime="application/pdf",
-                    key=filename
+                    key=filename,
                 )
 else:
     st.warning("No sample invoices found in the `sample_invoices/` folder.")
