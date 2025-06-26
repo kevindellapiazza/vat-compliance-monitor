@@ -92,6 +92,60 @@ This diagram shows how invoices flow through the system from upload to validatio
      - Validation errors  
      - Country-level compliance performance
 
+---
+## 🚧 Development Status
+
+This is the first published version of **VAT Compliance Monitor**, a personal project I built to showcase real-world applications of serverless cloud, AI-powered OCR, and automated invoice validation using AWS.
+
+✅ It already demonstrates a fully working pipeline — from PDF upload to OCR, VAT compliance checks, and alerting — entirely serverless and production-inspired.  
+⚠️ But during testing, I discovered two key challenges that need to be solved to make the system truly robust:
+
+---
+
+### ❗ Real-World Challenges (Identified During Testing)
+
+1. **Many real-world PDF invoices fail Textract OCR**, due to:
+   - Scanned documents without text layers
+   - Vector-based PDFs that look readable but are invisible to OCR
+   - Layout variations (e.g., fonts, alignments, rotated text)
+
+2. **Regex-based extraction is fragile and language-sensitive**:
+   - Even minor format changes (like line breaks or extra spaces) can break validation
+   - Invoices written in other languages don’t always match expected patterns
+
+---
+
+## 🧪 Solutions in Progress
+
+To solve these two core issues, I’m now actively building two major upgrades:
+
+### 🔧 Solution 1: Preprocessing Pipeline (Lambda + `ocrmypdf`)
+
+- I’m adding a new **Lambda-based preprocessing layer** that runs `ocrmypdf` before Textract is called
+- This converts any uploaded invoice — even scanned images or vector-based PDFs — into a **clean, OCR-friendly format**
+- It performs deskewing, background cleanup, rotation correction, and adds a text layer automatically
+
+> ✅ Fully serverless using a Lambda container (to support heavier dependencies like `ocrmypdf`)
+
+---
+
+### 🤖 Solution 2: NLP-Based Field Extraction (Amazon Comprehend)
+
+- I’m replacing brittle regex rules with **Named Entity Recognition (NER)** using **Amazon Comprehend**
+- This will extract fields like VAT ID, net amount, tax amount, and country in a more flexible way
+- It also supports **multiple languages**, giving the system greater adaptability
+
+> 🧠 This adds true **AI understanding** of invoice content — not just pattern matching
+
+---
+
+🎯 My goal with these improvements is to reach **95%+ compatibility** across diverse invoice formats — even those I’ve never seen before, and in various languages.
+
+I'm intentionally publishing this version early to show:
+- A fully working AWS serverless pipeline
+- Real-world challenges I encountered (and how I plan to solve them)
+- That I understand not just the tech, but the product lifecycle: from MVP to scale
+
 
 ---
 
@@ -160,6 +214,16 @@ All costs are based on **eu-central-1 (Frankfurt)** region, using AWS's public p
 
 This project was originally deployed manually using the AWS Console.  
 The included `sam/template.yaml` file is a clean infrastructure blueprint for redeploying the stack using **AWS SAM** if desired.
+
+---
+
+## 📦 Configuration
+
+Validation logic is driven by the file:  
+`data/allowed-vat-rates.csv`
+
+This file maps each country code to its allowed VAT rates and enables country-specific rule checks.  
+Making this external (not hardcoded) ensures scalability and maintainability.
 
 ---
 
