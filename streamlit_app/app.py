@@ -51,7 +51,8 @@ Once you upload your invoice, it flows through a live cloud architecture:
 5. 📊 Data becomes queryable via **Glue + Athena**
 
 ✅ The **production-ready version** can process **hundreds of invoices in parallel** —
-drastically reducing manual work and errors, with **scalable and close to zero cost infrastructure**.
+drastically reducing manual work and errors, with
+**scalable and close to zero cost infrastructure**.
 """
 )
 
@@ -96,7 +97,10 @@ if uploaded_file is not None:
                             st.error("Error fetching validation result.")
                             break
                     else:
-                        st.warning("⚠️ No validation result found yet. Please wait a few more seconds.")
+                        st.warning(
+                            "⚠️ No validation result found yet. "
+                            "Please wait a few more seconds."
+                        )
 
             except NoCredentialsError:
                 st.error("❌ AWS credentials not found.")
@@ -128,5 +132,3 @@ if os.path.exists(SAMPLE_DIR):
                 )
 else:
     st.warning("No sample invoices found in the `sample_invoices/` folder.")
-
-
