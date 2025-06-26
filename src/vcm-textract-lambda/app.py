@@ -107,6 +107,8 @@ def lambda_handler(event, context):
 
     lines = [b['Text'] for b in resp['Blocks'] if b['BlockType'] == 'LINE']
     full_text = '\n'.join(lines)
+    print("✅ Extracted Text from Invoice:")
+    print(full_text)
 
     vat_id_raw = extract_field(
         r'(?:VAT\s*(?:ID|No(?:\.|)|Number|Registration)|TVA|USt-IdNr|Partita\s*IVA)'
