@@ -37,3 +37,6 @@ data/**/*.csv
 *.zip
 .idea/
 
+# Docker files
+docker/layer/
+layers/
