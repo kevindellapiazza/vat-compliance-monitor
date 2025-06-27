@@ -7,7 +7,7 @@ from botocore.exceptions import NoCredentialsError, ClientError
 # ---------- CONFIG ----------
 S3_BUCKET = "vcm-invoice-uploads-kevin"
 REGION = "eu-central-1"
-FOLDER_NAME = "invoices_uploaded_from_streamlit"
+UPLOAD_PREFIX = "raw"  
 SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "sample_invoices")
 
 # AWS clients
@@ -38,21 +38,16 @@ This demo showcases a cloud-native **VAT document analyzer**, built on a serverl
 
 ---
 
-### ✨ What is happening behind the Scenes
+### ✨ Behind the Scenes
 
-Once you upload your invoice, it flows through a live cloud architecture:
+1. 📤 Saved to **Amazon S3** → `raw/` folder
+2. ⚙️ Triggered by **Lambda Preprocessing**
+3. 🔍 Text extracted by **Textract**
+4. 🧾 Results saved in **DynamoDB**
+5. 🔔 Alerts via **Slack + Email**
+6. 📊 Query-ready in **Athena**
 
-1. 📤 Saved to **Amazon S3**
-2. ⚙️ Processed by **AWS Lambda**, which uses **Textract** for OCR and applies
-   business rule validations: checks for **valid VAT ID format**, **country-specific
-   VAT %**, and **correct VAT amount** based on total
-3. 🧾 Results are saved to **DynamoDB**
-4. 🔔 Alerts are posted to **Slack**, and if validation fails, an email is triggered via **SES**
-5. 📊 Data becomes queryable via **Glue + Athena**
-
-✅ The **production-ready version** can process **hundreds of invoices in parallel** —
-drastically reducing manual work and errors, with
-**scalable and close to zero cost infrastructure**.
+✅ This system processes invoices automatically — no overlap, no ambiguity.
 """
 )
 
@@ -70,7 +65,7 @@ if uploaded_file is not None:
         with st.spinner("Uploading and triggering validation..."):
             try:
                 base_filename = os.path.splitext(uploaded_file.name)[0]
-                s3_key = f"{FOLDER_NAME}/{uploaded_file.name}"
+                s3_key = f"{UPLOAD_PREFIX}/{uploaded_file.name}"  
                 invoice_id = base_filename
 
                 s3.upload_fileobj(uploaded_file, S3_BUCKET, s3_key)
