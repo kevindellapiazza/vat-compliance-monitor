@@ -7,7 +7,7 @@ from botocore.exceptions import NoCredentialsError, ClientError
 # ---------- CONFIG ----------
 S3_BUCKET = "vcm-invoice-uploads-kevin"
 REGION = "eu-central-1"
-UPLOAD_PREFIX = "raw"  
+UPLOAD_PREFIX = "raw"
 SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "sample_invoices")
 
 # AWS clients
@@ -65,7 +65,7 @@ if uploaded_file is not None:
         with st.spinner("Uploading and triggering validation..."):
             try:
                 base_filename = os.path.splitext(uploaded_file.name)[0]
-                s3_key = f"{UPLOAD_PREFIX}/{uploaded_file.name}"  
+                s3_key = f"{UPLOAD_PREFIX}/{uploaded_file.name}"
                 invoice_id = base_filename
 
                 s3.upload_fileobj(uploaded_file, S3_BUCKET, s3_key)
