@@ -72,7 +72,7 @@ def lambda_handler(event, context):
             raise RuntimeError(f"PDF validation with qpdf failed: {qpdf_result.stderr}")
 
         logger.info("✅ qpdf validation passed.")
-        
+
         output_key = f"processed/{filename}"
         logger.info(f"📤 Uploading processed file to s3://{bucket}/{output_key}...")
         s3.upload_file(ocr_output_path, bucket, output_key)
@@ -92,4 +92,3 @@ def lambda_handler(event, context):
         if ocr_output_path and os.path.exists(ocr_output_path):
             os.remove(ocr_output_path)
         logger.info("🧹 Cleaned up temporary files.")
-        

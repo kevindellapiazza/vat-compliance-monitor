@@ -72,8 +72,8 @@ if uploaded_file is not None:
                 st.success("✅ Upload successful. Validation has been triggered.")
 
                 with st.spinner("Waiting for validation result..."):
-                    for _ in range(10):
-                        time.sleep(1)
+                    for _ in range(30):
+                        time.sleep(1.5)
                         try:
                             response = table.get_item(Key={"invoice_id": invoice_id})
                             if "Item" in response:

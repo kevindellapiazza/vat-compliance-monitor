@@ -39,7 +39,7 @@ def lambda_handler(event, context):
                     # Access fields, providing defaults if they are missing
                     invoice_id = new_image.get('invoice_id', {}).get('S', 'Unknown ID')
                     reason = new_image.get('reason', {}).get('S', 'No reason provided.')
-                    
+
                     email_body = f"Invoice validation failed for: {invoice_id}\n\nReason: {reason}"
                     logger.info("📧 Sending email for failed invoice %s...", invoice_id)
 
