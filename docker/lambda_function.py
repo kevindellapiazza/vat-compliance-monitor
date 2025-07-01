@@ -23,7 +23,6 @@ def lambda_handler(event, context):
     """
     local_path = None
     ocr_output_path = None
-    
     try:
         # Extract bucket and key from the S3 event record
         record = event['Records'][0]
@@ -58,7 +57,9 @@ def lambda_handler(event, context):
         ]
         
         # Execute the command
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            command, capture_output=True, text=True, check=False
+        )
 
         # Check for errors from the ocrmypdf process
         if result.returncode != 0:
@@ -72,10 +73,16 @@ def lambda_handler(event, context):
 
         # Validate the processed PDF to ensure it's not corrupt
         logger.info(f"🔍 Validating OCR'd file {ocr_output_path} with qpdf...")
-        qpdf_result = subprocess.run([QPDF_PATH, "--check", ocr_output_path], capture_output=True, text=True, check=False)
+        qpdf_result = subprocess.run(
+            [QPDF_PATH, "--check", ocr_output_path],
+            capture_output=True,
+            text=True,
+            check=False
+        )
         
         if qpdf_result.returncode != 0:
-            logger.error(f"❌ PDF validation failed: {qpdf_result.stderr}")
+            logger.error(f"❌ PDF validation failed for {ocr_output_path}.")
+            logger.error(f"Stderr: {qpdf_result.stderr}")
             raise RuntimeError(f"PDF validation with qpdf failed: {qpdf_result.stderr}")
         
         logger.info("✅ qpdf validation passed.")
@@ -101,3 +108,4 @@ def lambda_handler(event, context):
         if ocr_output_path and os.path.exists(ocr_output_path):
             os.remove(ocr_output_path)
         logger.info("🧹 Cleaned up temporary files.")
+        

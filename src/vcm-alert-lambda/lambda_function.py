@@ -18,9 +18,8 @@ def lambda_handler(event, context):
     logger.info("🔔 Alert Lambda triggered")
     logger.debug("Received event: %s", json.dumps(event))
 
-    #Get the list of records from the event payload.
+    # Safely get the list of records from the event payload.
     records = event.get("Records", [])
-    
     for record in records:
         try:
             logger.info("📦 Processing record with eventID: %s", record.get('eventID'))
