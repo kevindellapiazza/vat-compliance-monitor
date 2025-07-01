@@ -11,6 +11,7 @@ s3 = boto3.client('s3')
 LAMBDA_PYTHON_PATH = "/usr/local/bin/python3"
 QPDF_PATH = "/usr/bin/qpdf"
 
+
 def lambda_handler(event, context):
     """
     Main Lambda handler for preprocessing PDF invoices. It downloads a PDF from S3,
@@ -46,7 +47,6 @@ def lambda_handler(event, context):
             local_path,
             ocr_output_path
         ]
-
         result = subprocess.run(
             command, capture_output=True, text=True, check=False
         )
@@ -70,7 +70,7 @@ def lambda_handler(event, context):
             logger.error(f"❌ PDF validation failed for {ocr_output_path}.")
             logger.error(f"Stderr: {qpdf_result.stderr}")
             raise RuntimeError(f"PDF validation with qpdf failed: {qpdf_result.stderr}")
-        
+
         logger.info("✅ qpdf validation passed.")
         
         output_key = f"processed/{filename}"
@@ -92,3 +92,4 @@ def lambda_handler(event, context):
         if ocr_output_path and os.path.exists(ocr_output_path):
             os.remove(ocr_output_path)
         logger.info("🧹 Cleaned up temporary files.")
+        

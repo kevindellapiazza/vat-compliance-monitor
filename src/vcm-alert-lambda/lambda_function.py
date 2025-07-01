@@ -53,7 +53,6 @@ def lambda_handler(event, context):
                         }
                     )
                     logger.info("✅ Email sent. SES Message ID: %s", response['MessageId'])
-
         except Exception as e:
             logger.error("❌ Error processing a record: %s", e, exc_info=True)
             continue
