@@ -92,4 +92,3 @@ def lambda_handler(event, context):
         if ocr_output_path and os.path.exists(ocr_output_path):
             os.remove(ocr_output_path)
         logger.info("🧹 Cleaned up temporary files.")
-        
