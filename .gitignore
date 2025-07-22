@@ -5,38 +5,22 @@ __pycache__/
 .venv/
 .env
 
-# AWS & SAM
+# AWS & SAM 
 .aws-sam/
-sam/.aws-sam/
-*.template.yaml
-*.log
 
-# macOS
+# macOS & VS Code
 .DS_Store
-
-# VS Code settings
 .vscode/
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
-*.ipynb_checkpoints
-*.nbconvert.ipynb
-*.ipynb~
 
 # Data files
-data/**/*.parquet
-data/**/*.csv
 *.pdf
-!data/allowed-vat-rates.csv
+!streamlit_app/sample_invoices/*.pdf
 !tests/assets/*.pdf
-
-# Preserve Athena folder structure
-!data/athena_output/.keep
 
 # Misc
 *.zip
 .idea/
-
-# Docker files
-docker/layer/
-layers/
+.pytest_cache/
