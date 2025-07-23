@@ -13,10 +13,27 @@ Parameters:
     Default: vcm-invoices-kevin-iac-01
 
 Resources:
+  # 1. S3 Bucket
   InvoiceBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref InvoiceBucketName
+  # 2. The DynamoDB Table 
+  InvoiceStatusTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: vcm-invoice-status-iac
+      AttributeDefinitions:
+        - AttributeName: invoice_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: invoice_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  # 3. Preprocessing Lambda Function (built from Docker)
   VcmPreprocessFunction:
     Type: AWS::Serverless::Function
     Properties:
