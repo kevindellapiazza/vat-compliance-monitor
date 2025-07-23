@@ -1,43 +1,52 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: VCM Invoice Validation Pipeline
+Description: >
+  VAT Compliance Monitor (VCM) - Phase 1: Preprocessing Stack
+  This stack deploys the S3 bucket and the core PDF preprocessing Lambda function.
 
-Globals:
-  Function:
-    Runtime: python3.9
-    Timeout: 30
-    MemorySize: 256
+Parameters:
+  InvoiceBucketName:
+    Type: String
+    Description: >
+      A globally unique name for the S3 bucket where invoices will be uploaded.
+      This bucket will be created by this stack.
+    Default: vcm-invoices-kevin-iac-01
 
 Resources:
-  VcmTextractLambda:
+  InvoiceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref InvoiceBucketName
+  VcmPreprocessFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: vcm-textract-lambda
-      CodeUri: ../src/vcm-textract-lambda/
-      Handler: lambda_function.lambda_handler
+      FunctionName: vcm-preprocess-lambda-iac
+      PackageType: Image
+      Architectures: [x86_64]
+      MemorySize: 2048
+      Timeout: 90
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [s3:GetObject]
+              Resource: !Sub "arn:aws:s3:::${InvoiceBucketName}/raw/*"
+            - Effect: Allow
+              Action: [s3:PutObject]
+              Resource: !Sub "arn:aws:s3:::${InvoiceBucketName}/processed/*"
       Events:
-        InvoiceUploaded:
+        InvoiceUploadTrigger:
           Type: S3
           Properties:
-            Bucket: vcm-invoice-uploads-kevin           
+            Bucket: !Ref InvoiceBucket
             Events: s3:ObjectCreated:*
-
-  VcmAlertLambda:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: vcm-alert-lambda
-      CodeUri: ../src/vcm-alert-lambda/
-      Handler: lambda_function.lambda_handler
-      Environment:
-        Variables:
-          SENDER_EMAIL: kevindellapiazza1@gmail.com        
-          RECIPIENT_EMAIL: kevindellapiazza1@gmail.com     
-      Events:
-        ValidationFailed:
-          Type: EventBridgeRule
-          Properties:
-            Pattern:
-              source:
-                - invoice.validation
-              detail-type:
-                - ValidationFailed
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: raw/
+                  - Name: suffix
+                    Value: .pdf
+    Metadata:
+      DockerTag: latest
+      DockerContext: ../docker
+      Dockerfile: Dockerfile
