@@ -5,8 +5,9 @@ __pycache__/
 .venv/
 .env
 
-# AWS & SAM 
+# AWS & SAM build artifacts
 .aws-sam/
+samconfig.toml
 
 # macOS & VS Code
 .DS_Store
@@ -15,7 +16,7 @@ __pycache__/
 # Jupyter Notebooks
 .ipynb_checkpoints/
 
-# Data files
+# Data files (ignore all PDFs except sample/test assets)
 *.pdf
 !streamlit_app/sample_invoices/*.pdf
 !tests/assets/*.pdf
