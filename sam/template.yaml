@@ -1,16 +1,27 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  VAT Compliance Monitor (VCM) - Phase 1: Preprocessing Stack
-  This stack deploys the S3 bucket and the core PDF preprocessing Lambda function.
+  VAT Compliance Monitor (VCM) - IaC Stack
+  This stack deploys the complete invoice processing pipeline.
 
 Parameters:
   InvoiceBucketName:
     Type: String
-    Description: >
-      A globally unique name for the S3 bucket where invoices will be uploaded.
-      This bucket will be created by this stack.
+    Description: A globally unique name for the S3 bucket to be created.
     Default: vcm-invoices-kevin-iac-01
+  
+  SlackWebhookUrl:
+    Type: String
+    Description: The secret Slack Webhook URL for sending notifications.
+    NoEcho: true
+  
+  AlertEmailFrom:
+    Type: String
+    Description: The verified SES email address to send alerts from.
+  
+  AlertEmailTo:
+    Type: String
+    Description: The email address to send failure alerts to.
 
 Resources:
   # 1. S3 Bucket
@@ -18,7 +29,8 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref InvoiceBucketName
-  # 2. The DynamoDB Table 
+
+  # 2. DynamoDB Table
   InvoiceStatusTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -33,7 +45,7 @@ Resources:
       StreamSpecification:
         StreamViewType: NEW_AND_OLD_IMAGES
 
-  # 3. Preprocessing Lambda Function (built from Docker)
+  # 3. Preprocessing Lambda
   VcmPreprocessFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -67,3 +79,77 @@ Resources:
       DockerTag: latest
       DockerContext: ../docker
       Dockerfile: Dockerfile
+
+  # 4. Textract Lambda
+  VcmTextractLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: vcm-textract-lambda-iac
+      CodeUri: ../src/vcm-textract-lambda/
+      Handler: app.lambda_handler
+      Runtime: python3.12
+      MemorySize: 512
+      Timeout: 60
+      Environment:
+        Variables:
+          STATUS_TABLE_NAME: !Ref InvoiceStatusTable
+          SLACK_WEBHOOK_URL: !Ref SlackWebhookUrl
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref InvoiceBucketName
+        - DynamoDBWritePolicy:
+            TableName: !Ref InvoiceStatusTable
+        - TextractPolicy:
+            Statement:
+              - Effect: Allow
+                Action: ['textract:AnalyzeDocument', 'textract:DetectDocumentText']
+                Resource: '*'
+        - Statement:
+          - Effect: Allow
+            Action: [s3:GetObject, s3:PutObject]
+            Resource: "arn:aws:s3:::vcm-config-kevin/*"
+      Events:
+        PreprocessCompleteTrigger:
+          Type: S3
+          Properties:
+            Bucket: !Ref InvoiceBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: processed/
+                  - Name: suffix
+                    Value: .pdf
+
+  # 5. Alert Lambda
+  VcmAlertLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: vcm-alert-lambda-iac
+      CodeUri: ../src/vcm-alert-lambda/
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.12
+      MemorySize: 128
+      Timeout: 30
+      Environment:
+        Variables:
+          ALERT_EMAIL_FROM: !Ref AlertEmailFrom
+          ALERT_EMAIL_TO: !Ref AlertEmailTo
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - ses:SendEmail
+              - ses:SendRawEmail
+            Resource: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${AlertEmailFrom}"
+      Events:
+        ValidationFailedTrigger:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt InvoiceStatusTable.StreamArn
+            StartingPosition: LATEST
+            BatchSize: 1
+            FilterCriteria:
+              Filters:
+                - Pattern: '{ "eventName": ["INSERT"], "dynamodb": { "NewImage": { "status": { "S": ["FAIL"] } } } }'
