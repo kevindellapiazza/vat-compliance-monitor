@@ -17,7 +17,7 @@ from decimal import Decimal
 # === AWS Clients ===
 s3 = boto3.client('s3')
 dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('vcm-invoice-status')
+table = dynamodb.Table(os.environ['STATUS_TABLE_NAME'])
 
 # === CONFIG ===
 CONFIG_BUCKET = 'vcm-config-kevin'
