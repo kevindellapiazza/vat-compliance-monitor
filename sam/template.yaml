@@ -57,7 +57,7 @@ Resources:
       Policies:
         - Statement:
             - Effect: Allow
-              Action: [s3:GetObject]
+              Action: [s3:GetObject, s3:HeadObject]
               Resource: !Sub "arn:aws:s3:::${InvoiceBucketName}/raw/*"
             - Effect: Allow
               Action: [s3:PutObject]
