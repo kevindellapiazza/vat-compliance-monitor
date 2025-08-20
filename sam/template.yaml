@@ -2,13 +2,13 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
   VAT Compliance Monitor (VCM) - IaC Stack
-  This stack deploys the complete invoice processing pipeline.
+  This stack deploys the complete invoice processing pipeline, including the data analytics layer with AWS Glue.
 
 Parameters:
   InvoiceBucketName:
     Type: String
     Description: A globally unique name for the S3 bucket to be created.
-    Default: vcm-invoices-kevin-iac-01
+    Default: vcm-kevin-pipeline-invoices
   
   SlackWebhookUrl:
     Type: String
@@ -35,12 +35,8 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: vcm-invoice-status-iac
-      AttributeDefinitions:
-        - AttributeName: invoice_id
-          AttributeType: S
-      KeySchema:
-        - AttributeName: invoice_id
-          KeyType: HASH
+      AttributeDefinitions: [{AttributeName: invoice_id, AttributeType: S}]
+      KeySchema: [{AttributeName: invoice_id, KeyType: HASH}]
       BillingMode: PAY_PER_REQUEST
       StreamSpecification:
         StreamViewType: NEW_AND_OLD_IMAGES
@@ -69,12 +65,7 @@ Resources:
             Bucket: !Ref InvoiceBucket
             Events: s3:ObjectCreated:*
             Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: raw/
-                  - Name: suffix
-                    Value: .pdf
+              S3Key: {Rules: [{Name: prefix, Value: raw/}, {Name: suffix, Value: .pdf}]}
     Metadata:
       DockerTag: latest
       DockerContext: ../docker
@@ -95,15 +86,9 @@ Resources:
           STATUS_TABLE_NAME: !Ref InvoiceStatusTable
           SLACK_WEBHOOK_URL: !Ref SlackWebhookUrl
       Policies:
-        - S3ReadPolicy:
-            BucketName: !Ref InvoiceBucketName
-        - DynamoDBWritePolicy:
-            TableName: !Ref InvoiceStatusTable
-        - TextractPolicy:
-            Statement:
-              - Effect: Allow
-                Action: ['textract:AnalyzeDocument', 'textract:DetectDocumentText']
-                Resource: '*'
+        - S3ReadPolicy: {BucketName: !Ref InvoiceBucketName}
+        - DynamoDBWritePolicy: {TableName: !Ref InvoiceStatusTable}
+        - TextractPolicy: {Statement: [{Effect: Allow, Action: ['textract:AnalyzeDocument', 'textract:DetectDocumentText'], Resource: '*'}]}
         - Statement:
           - Effect: Allow
             Action: [s3:GetObject, s3:PutObject]
@@ -115,12 +100,7 @@ Resources:
             Bucket: !Ref InvoiceBucket
             Events: s3:ObjectCreated:*
             Filter:
-              S3Key:
-                Rules:
-                  - Name: prefix
-                    Value: processed/
-                  - Name: suffix
-                    Value: .pdf
+              S3Key: {Rules: [{Name: prefix, Value: processed/}, {Name: suffix, Value: .pdf}]}
 
   # 5. Alert Lambda
   VcmAlertLambda:
@@ -153,3 +133,47 @@ Resources:
             FilterCriteria:
               Filters:
                 - Pattern: '{ "eventName": ["INSERT"], "dynamodb": { "NewImage": { "status": { "S": ["FAIL"] } } } }'
+  
+  # 6. Data Analytics Layer
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: vcm_analytics_db
+        Description: "Database for the VAT Compliance Monitor analytics data."
+
+  GlueCrawlerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: [glue.amazonaws.com]}
+            Action: [sts:AssumeRole]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: S3AccessForGlueCrawler
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:ListBucket]
+                Resource:
+                  - "arn:aws:s3:::vcm-config-kevin"
+                  - "arn:aws:s3:::vcm-config-kevin/*"
+
+  VcmDataCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: vcm-data-crawler
+      Role: !GetAtt GlueCrawlerRole.Arn
+      DatabaseName: !Ref GlueDatabase
+      Targets:
+        S3Targets:
+          - Path: "s3://vcm-config-kevin/data/athena_output/"
+      SchemaChangePolicy:
+        UpdateBehavior: "UPDATE_IN_DATABASE"
+        DeleteBehavior: "LOG"
