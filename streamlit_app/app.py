@@ -5,7 +5,7 @@ import time
 from botocore.exceptions import NoCredentialsError, ClientError
 
 # ---------- CONFIG ----------
-S3_BUCKET = "vcm-invoice-uploads-kevin"
+S3_BUCKET = "vcm-kevin-pipeline-invoices"
 REGION = "eu-central-1"
 UPLOAD_PREFIX = "raw"
 SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "sample_invoices")
@@ -13,7 +13,7 @@ SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "sample_invoices")
 # AWS clients
 s3 = boto3.client("s3", region_name=REGION)
 dynamodb = boto3.resource("dynamodb", region_name=REGION)
-table = dynamodb.Table("vcm-invoice-status")
+table = dynamodb.Table("vcm-invoice-status-iac")
 
 # ---------- PAGE UI ----------
 st.set_page_config(page_title="VAT Compliance Monitor", page_icon="📄")
@@ -42,10 +42,11 @@ This demo showcases a cloud-native **VAT document analyzer**, built on a serverl
 
 1. 📤 Saved to **Amazon S3** → `raw/` folder
 2. ⚙️ Triggered by **Lambda Preprocessing**
-3. 🔍 Text extracted by **Textract**
-4. 🧾 Results saved in **DynamoDB**
-5. 🔔 Alerts via **Slack + Email**
-6. 📊 Query-ready in **Athena**
+3. ✨ The Preprocess Lambda saves the new, text-layered PDF to Amazon S3 → processed/ folder.
+4. 🔍 Text extracted by **Textract**
+5. 🧾 Results saved in **DynamoDB**
+6. 🔔 Alerts via **Slack + Email**
+7. 📊 Query-ready in **Athena**
 
 ✅ This system processes invoices automatically — no overlap, no ambiguity.
 """
