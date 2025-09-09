@@ -42,7 +42,7 @@ This demo showcases a cloud-native **VAT document analyzer**, built on a serverl
 
 1. 📤 Saved to **Amazon S3** → `raw/` folder
 2. ⚙️ Triggered by **Lambda Preprocessing**
-3. ✨ The Preprocess Lambda saves the new, text-layered PDF to Amazon S3 → processed/ folder.
+3. ✨ The **Preprocessing Lambda** saves the new, text-layered PDF to Amazon S3 → `processed/` folder.
 4. 🔍 Text extracted by **Textract**
 5. 🧾 Results saved in **DynamoDB**
 6. 🔔 Alerts via **Slack + Email**
@@ -73,7 +73,7 @@ if uploaded_file is not None:
                 st.success("✅ Upload successful. Validation has been triggered.")
 
                 with st.spinner("Waiting for validation result..."):
-                    for _ in range(30):
+                    for _ in range(60):
                         time.sleep(1.5)
                         try:
                             response = table.get_item(Key={"invoice_id": invoice_id})
