@@ -18,7 +18,7 @@ This project solves a critical business problem by transforming unstructured, re
 ## 🌐 Interactive Preview
 
 Test the full invoice compliance pipeline via the cloud-hosted Streamlit interface:
-🔗 **[Launch Validation App](https://vat-compliance-monitor-lfentssvkbaggt5qrfekkb.streamlit.app/)**
+🔗 **[Launch Validation App](https://vat-compliance-monitor-lfentssvkbaggt5qrfekkb.streamlit.app/)** 📤
 
 Upload a sample invoice to trigger real-time processing, validation, and alerts.
 
@@ -28,7 +28,36 @@ Upload a sample invoice to trigger real-time processing, validation, and alerts.
 
 This diagram shows how invoices flow through the system from upload to validation and analytics.
 
-![Architecture Diagram](docs/architecture.png)
+![Architecture Diagram](docs/VCMarchitecture.drawio.png)
+
+---
+
+## 🚀 How It Works (Step-by-Step)
+
+1.  **Ingestion & Preprocessing:** A user uploads a PDF to the `raw/` prefix in the main **Invoice Bucket** (`vcm-kevin-pipeline-invoices`). This S3 event triggers a Docker-based **`preprocess-lambda`** that uses `ocrmypdf` to clean the file and apply a text layer, saving the result to the `processed/` prefix within the same bucket.
+
+2.  **Extraction, Validation & Storage:** The new file in the `processed/` prefix triggers the **`textract-lambda`**. This function is the core of the pipeline and performs several actions:
+    * It uses **Amazon Textract** for intelligent OCR.
+    * It validates the extracted data against business rules.
+    * It saves the `PASS`/`FAIL` result to **Amazon DynamoDB** for real-time status checks.
+    * It saves the full, structured result to the separate **Analytics Bucket** (`vcm-config-kevin`) as a Parquet file.
+    * It sends an operational update for every invoice to **Slack**.
+
+3.  **Critical Alerting:** A `FAIL` status written to DynamoDB triggers the **`alert-lambda`** via a DynamoDB Stream. This function sends a detailed failure notification via **Amazon SES (email)**.
+
+4.  **Serverless Analytics:** An **AWS Glue Crawler** catalogs the Parquet files from the Analytics Bucket, making them instantly queryable using standard SQL in **Amazon Athena**.
+
+---
+
+## ✨ Key Features & Architectural Highlights
+
+1.  **100% Infrastructure as Code (IaC):** The entire cloud infrastructure—S3 buckets, DynamoDB tables, all three Lambda functions, IAM roles, and event triggers—is defined in a single `template.yaml` file. The whole system can be reliably deployed in any AWS account with a single `sam deploy` command.
+
+2.  **Automated Preprocessing for "Dirty" PDFs:** The system solves the common problem of unreadable documents. A Docker-based Lambda function uses `ocrmypdf` to clean and apply a text layer to any incoming PDF, ensuring even scanned documents are machine-readable.
+
+3.  **AI-Powered Data Extraction:** **AWS Textract** intelligently extracts structured data (VAT IDs, amounts, dates) from the cleaned PDFs, overcoming variations in invoice layouts.
+
+4.  **Data Lake & Analytics Layer:** Processed data is saved in the optimized **Parquet** format. An **AWS Glue Crawler**, also defined as code, automatically catalogs this data, making it instantly queryable via standard SQL with **Amazon Athena**.
 
 ---
 
@@ -53,109 +82,6 @@ A system that is:
 
 ---
 
-## ✨ Key Features & Architectural Highlights
-
-1.  **100% Infrastructure as Code (IaC):** The entire cloud infrastructure—S3 buckets, DynamoDB tables, all three Lambda functions, IAM roles, and event triggers—is defined in a single `template.yaml` file. The whole system can be reliably deployed in any AWS account with a single `sam deploy` command.
-
-2.  **Automated Preprocessing for "Dirty" PDFs:** The system solves the common problem of unreadable documents. A Docker-based Lambda function uses `ocrmypdf` to clean and apply a text layer to any incoming PDF, ensuring even scanned documents are machine-readable.
-
-3.  **AI-Powered Data Extraction:** **AWS Textract** intelligently extracts structured data (VAT IDs, amounts, dates) from the cleaned PDFs, overcoming variations in invoice layouts.
-
-4.  **Data Lake & Analytics Layer:** Processed data is saved in the optimized **Parquet** format. An **AWS Glue Crawler**, also defined as code, automatically catalogs this data, making it instantly queryable via standard SQL with **Amazon Athena**.
-
----
-
-## 🚀 How It Works (Step-by-Step)
-
-1.  **Ingestion & Preprocessing:** A user uploads a PDF to the **S3** `raw/` folder. This triggers a Docker-based **`preprocess-lambda`** that uses `ocrmypdf` to clean the file and saves the result to the `processed/` folder.
-
-2.  **Extraction & Validation:** The new file in `processed/` triggers the **`textract-lambda`**. This function uses **Amazon Textract** for OCR, validates the data against business rules, and saves the `PASS`/`FAIL` result.
-
-3.  **Data Storage:** The result is saved in two formats:
-    * **Amazon DynamoDB:** For real-time status checks.
-    * **S3 as Parquet:** For long-term data warehousing and analytics.
-
-4.  **Real-Time Alerting:** A `FAIL` status written to DynamoDB triggers the **`alert-lambda`** via a DynamoDB Stream, which sends notifications via **Slack** and **Amazon SES (email)**.
-
-5.  **Serverless Analytics:** An **AWS Glue Crawler** catalogs the Parquet files, making them instantly queryable in **Amazon Athena**.
-
----
-
-## 📦 Deployment
-
-The entire infrastructure for this project is defined in the `sam/template.yaml` file and deployed as a single, cohesive stack using the AWS SAM Framework.
-
-#### Prerequisites
--   AWS Account & IAM User
--   AWS CLI (configured with credentials)
--   AWS SAM CLI
--   Docker Desktop
-
-#### Deployment Steps
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/kevindellapiazza/vat-compliance-monitor.git](https://github.com/kevindellapiazza/vat-compliance-monitor.git)
-    cd vat-compliance-monitor
-    ```
-2.  **Build the application:**
-    This command builds the Docker image and packages the Lambda functions.
-    ```bash
-    sam build -t sam/template.yaml
-    ```
-3.  **Deploy the stack:**
-    This command starts a guided deployment. You will be prompted to enter parameters for your unique bucket name and secrets (emails, Slack URL).
-    ```bash
-    sam deploy --guided
-    ```
----
-
-## 🔧 Tools & Technologies
-
--   **IaC:** AWS SAM CLI
--   **Compute:** AWS Lambda (Python 3.12 Runtime & Docker Container Image)
--   **AI / OCR:** AWS Textract
--   **Storage:** Amazon S3, Amazon DynamoDB
--   **Data Analytics:** AWS Glue, Amazon Athena
--   **Alerting:** Amazon SES, Slack Webhooks
--   **CI/CD:** GitHub Actions
--   **Frontend:** Streamlit
-
----
-
-## ✅ Continuous Integration (CI)
-
-This project uses **GitHub Actions** to automatically run quality checks on every commit:
--   Check code quality with **Ruff**.
--   Run tests with **Pytest**.
-
----
-
-## 🧠 Skills Demonstrated
-
--   **Infrastructure as Code (IaC):** Designed and deployed a complete, multi-resource cloud application from a single, reusable AWS SAM template.
--   **Serverless & Event-Driven Architecture:** Built a robust, scalable, and cost-efficient pipeline using S3 event triggers, Lambda functions, and DynamoDB Streams.
--   **AI/ML Integration:** Leveraged AWS Textract for intelligent document processing (OCR) to extract structured data from unstructured PDFs.
--   **Data Engineering:** Created a data pipeline that transforms and stores data in an analytics-optimized format (Parquet) and built a data catalog with AWS Glue for querying in Amazon Athena.
--   **CI/CD & DevOps:** Implemented a Continuous Integration workflow with GitHub Actions to automate code quality checks and testing.
--   **Cloud Security:** Applied the principle of least privilege with specific IAM roles for each service and managed secrets securely outside of version control using parameters.
-
----
-
-## 🔐 Security Best Practices (Deployed in eu-central-1)
-
-| Layer     | Practice |
-|-----------|----------|
-| **S3**    | Server-side encryption (SSE-S3) enabled by default |
-| **IAM**   | Each Lambda has least-privilege IAM roles (S3 + logging only) |
-| **SES**   | Sandbox mode; verified sender & recipients only |
-| **Parquet Output** | Stored in private S3 path, queryable only via Athena |
-| **Monitoring** | CloudWatch logs + EventBridge alerts on failures |
-| **No Public Access** | All resources use private IAM-authenticated triggers |
-
-> ✅ Compliant with AWS’s Well-Architected security pillar — safe for real-world invoice data.
-
----
-
 ## 💰 Cloud Cost Estimate (10,000 Invoices / Month)
 
 This system is optimized for affordability, even at an enterprise scale.  
@@ -174,6 +100,85 @@ All costs are based on **eu-central-1 (Frankfurt)** region, using AWS's public p
 | **TOTAL**        | **~$18.25/month** | Fully serverless, 10k invoices processed monthly |
 
 > 🔍 **Textract accounts for ~90% of total cost**. All other components combined cost < $5/month.
+
+---
+
+## 🔐 Security Best Practices (Deployed in eu-central-1)
+
+| Layer     | Practice |
+|-----------|----------|
+| **S3**    | Server-side encryption (SSE-S3) enabled by default |
+| **IAM**   | Each Lambda has least-privilege IAM roles (S3 + logging only) |
+| **SES**   | Sandbox mode; verified sender & recipients only |
+| **Parquet Output** | Stored in private S3 path, queryable only via Athena |
+| **Monitoring** | CloudWatch logs + EventBridge alerts on failures |
+| **No Public Access** | All resources use private IAM-authenticated triggers |
+
+> ✅ Compliant with AWS’s Well-Architected security pillar — safe for real-world invoice data.
+
+---
+
+## 📦 Deployment
+
+The entire infrastructure for this project is defined in the `sam/template.yaml` file and deployed as a single, cohesive stack using the AWS SAM Framework.
+
+#### Prerequisites
+-   AWS Account & IAM User
+-   AWS CLI (configured with credentials)
+-   AWS SAM CLI
+-   Docker Desktop
+
+#### Deployment Steps
+1.  **Clone the repository:**
+
+    ```bash
+    git clone [https://github.com/kevindellapiazza/vat-compliance-monitor.git](https://github.com/kevindellapiazza/vat-compliance-monitor.git)
+    cd vat-compliance-monitor
+    ```
+2.  **Build the application:**
+
+    ```bash
+    sam build -t sam/template.yaml
+    ```
+    This command builds the Docker image and packages the Lambda functions.
+3.  **Deploy the stack:**
+
+    ```bash
+    sam deploy --guided
+    ```
+    This command starts a guided deployment. You will be prompted to enter parameters for your unique bucket name and secrets (emails, Slack URL).
+
+---
+
+## 🔧 Tools & Technologies
+
+-   **IaC:** AWS SAM CLI
+-   **Compute:** AWS Lambda (Python 3.12 Runtime & Docker Container Image)
+-   **AI / OCR:** AWS Textract
+-   **Storage:** Amazon S3, Amazon DynamoDB
+-   **Data Analytics:** AWS Glue, Amazon Athena
+-   **Alerting:** Amazon SES, Slack Webhooks
+-   **CI/CD:** GitHub Actions
+-   **Frontend:** Streamlit
+
+---
+
+## 🧠 Skills Demonstrated
+
+-   **Infrastructure as Code (IaC):** Designed and deployed a complete, multi-resource cloud application from a single, reusable AWS SAM template.
+-   **Serverless & Event-Driven Architecture:** Built a robust, scalable, and cost-efficient pipeline using S3 event triggers, Lambda functions, and DynamoDB Streams.
+-   **AI/ML Integration:** Leveraged AWS Textract for intelligent document processing (OCR) to extract structured data from unstructured PDFs.
+-   **Data Engineering:** Created a data pipeline that transforms and stores data in an analytics-optimized format (Parquet) and built a data catalog with AWS Glue for querying in Amazon Athena.
+-   **CI/CD & DevOps:** Implemented a Continuous Integration workflow with GitHub Actions to automate code quality checks and testing.
+-   **Cloud Security:** Applied the principle of least privilege with specific IAM roles for each service and managed secrets securely outside of version control using parameters.
+
+---
+
+## ✅ Continuous Integration (CI)
+
+This project uses **GitHub Actions** to automatically run quality checks on every commit:
+-   Check code quality with **Ruff**.
+-   Run tests with **Pytest**.
 
 ---
 
