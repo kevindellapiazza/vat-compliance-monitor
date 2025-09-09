@@ -42,7 +42,8 @@ This demo showcases a cloud-native **VAT document analyzer**, built on a serverl
 
 1. 📤 Saved to **Amazon S3** → `raw/` folder
 2. ⚙️ Triggered by **Lambda Preprocessing**
-3. ✨ The **Preprocessing Lambda** saves the new, text-layered PDF to Amazon S3 → `processed/` folder.
+3. ✨ The **Preprocessing Lambda** saves the new, text-layered PDF
+   to Amazon S3 → `processed/` folder.
 4. 🔍 Text extracted by **Textract**
 5. 🧾 Results saved in **DynamoDB**
 6. 🔔 Alerts via **Slack + Email**
