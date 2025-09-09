@@ -1,37 +1,44 @@
-# ✅ VCM — Real-Time VAT Invoice Compliance Powered by AI + AWS Serverless
+# ✅ VCM — VAT Compliance Monitor
 
+[![Build Status](https://github.com/kevindellapiazza/vat-compliance-monitor/actions/workflows/build-test.yml/badge.svg)](https://github.com/kevindellapiazza/vat-compliance-monitor/actions)
+[![Infrastructure as Code](https://img.shields.io/badge/IaC-AWS%20SAM-orange.svg)](https://aws.amazon.com/serverless/sam/)
 
-![CI](https://github.com/kevindellapiazza/vat-compliance-monitor/actions/workflows/build-test.yml/badge.svg)
-
-> Automated validation for European VAT invoices using AWS (Textract, Lambda, DynamoDB, SES, Slack, Streamlit)
+> An end-to-end, serverless pipeline on AWS for real-time validation of European VAT invoices. Fully deployed and managed with Infrastructure as Code.
 
 ---
 
 ## 📌 Project Overview
 
-**VCM (VAT Compliance Monitor)** is a real-time invoice validation pipeline built entirely on a fully serverless AWS architecture.  
-It transforms unstructured PDF invoices into validated, auditable, and analytics-ready records in just seconds — without any manual steps.  
+**VCM (VAT Compliance Monitor)** is a production-grade, event-driven pipeline that automates the validation of European VAT invoices. The entire system is defined and deployed using **Infrastructure as Code (IaC)** with the AWS SAM Framework.
 
-Built using **AWS Textract**, **Lambda**, **DynamoDB**, **SES**, and **Slack**, VCM enforces VAT compliance rules at scale and delivers real-time feedback through alerting systems.  
-From OCR to validation to storage, everything runs automatically — no servers, no queues, no spreadsheets.  
+This project solves a critical business problem by transforming unstructured, real-world PDF invoices—**including low-quality scans**—into validated, auditable, and analytics-ready records, all automatically.
 
-This project simulates a real-world FinOps and compliance automation use case, demonstrating how **AI + Cloud** can streamline business-critical document workflows.
+---
+
+## 🌐 Interactive Preview
+
+Test the full invoice compliance pipeline via the cloud-hosted Streamlit interface:
+🔗 **[Launch Validation App](https://vat-compliance-monitor-lfentssvkbaggt5qrfekkb.streamlit.app/)**
+
+Upload a sample invoice to trigger real-time processing, validation, and alerts.
+
+---
+
+## 🗺️ System Architecture
+
+This diagram shows how invoices flow through the system from upload to validation and analytics.
+
+![Architecture Diagram](docs/architecture.png)
 
 ---
 
 ## 🎯 Why This Matters
 
-- 💸 Businesses lose dozens of hours per month manually validating invoices for tax compliance.  
-- ❌ Small VAT mismatches can lead to major penalties, audit failures, or rejected tax filings.  
-- 📉 Most companies still rely on spreadsheets and shared drives for compliance workflows.  
+-   💸 Businesses lose dozens of hours per month manually validating invoices for tax compliance.
+-   ❌ Small VAT mismatches can lead to major penalties, audit failures, or rejected tax filings.
+-   📉 Most companies still rely on spreadsheets and shared drives for compliance workflows.
 
-VCM automates this process end to end — intelligently, scalably, and cost-effectively.  
-As a data scientist working at the intersection of data science, AI, and cloud, I built VCM to reflect the kind of automation modern finance teams need:
-
-- 🧠 **AI-powered OCR** (AWS Textract) reads scanned invoices and extracts key tax and payment details  
-- ⚙️ **Serverless compute** (Lambda) applies VAT validation logic — checking for required fields, matching rates, and country-specific rules  
-- 💾 **Fully managed storage** (DynamoDB + Parquet with Athena) supports both real-time feedback and historical reporting  
-- 🔔 **Real-time alerts** via Slack and SES notify the right people at the right time — instantly  
+VCM automates this process end-to-end—intelligently, scalably, and cost-effectively. As a data and cloud engineer, I built VCM to reflect the kind of automation modern finance teams need.
 
 ---
 
@@ -46,129 +53,108 @@ A system that is:
 
 ---
 
-## 🌐 Interactive Preview
+## ✨ Key Features & Architectural Highlights
 
-Test the full invoice compliance pipeline via the cloud-hosted Streamlit interface:  
-🔗 [Launch Validation App](https://vat-compliance-monitor-lfentssvkbaggt5qrfekkb.streamlit.app/)  
-Upload a sample invoice to trigger real-time processing, validation, and alerts.
+1.  **100% Infrastructure as Code (IaC):** The entire cloud infrastructure—S3 buckets, DynamoDB tables, all three Lambda functions, IAM roles, and event triggers—is defined in a single `template.yaml` file. The whole system can be reliably deployed in any AWS account with a single `sam deploy` command.
 
----
+2.  **Automated Preprocessing for "Dirty" PDFs:** The system solves the common problem of unreadable documents. A Docker-based Lambda function uses `ocrmypdf` to clean and apply a text layer to any incoming PDF, ensuring even scanned documents are machine-readable.
 
-## 🗺️ System Architecture
+3.  **AI-Powered Data Extraction:** **AWS Textract** intelligently extracts structured data (VAT IDs, amounts, dates) from the cleaned PDFs, overcoming variations in invoice layouts.
 
-This diagram shows how invoices flow through the system from upload to validation and analytics.
-
-![Architecture Diagram](docs/architecture.png)
+4.  **Data Lake & Analytics Layer:** Processed data is saved in the optimized **Parquet** format. An **AWS Glue Crawler**, also defined as code, automatically catalogs this data, making it instantly queryable via standard SQL with **Amazon Athena**.
 
 ---
 
 ## 🚀 How It Works (Step-by-Step)
 
-1. 📤 **Invoice Upload**  
-   A user uploads one or more PDF invoices to an **S3** bucket.
+1.  **Ingestion & Preprocessing:** A user uploads a PDF to the **S3** `raw/` folder. This triggers a Docker-based **`preprocess-lambda`** that uses `ocrmypdf` to clean the file and saves the result to the `processed/` folder.
 
-2. ⚙️ **OCR with Textract**  
-   - An S3 event triggers a **Lambda** function.  
-   - **Textract** processes each PDF and extracts structured fields including:
-     - Supplier name  
-     - VAT ID  
-     - Total amount  
-     - Line items  
+2.  **Extraction & Validation:** The new file in `processed/` triggers the **`textract-lambda`**. This function uses **Amazon Textract** for OCR, validates the data against business rules, and saves the `PASS`/`FAIL` result.
 
-3. ✅ **Validation Logic**  
-   - The Lambda function parses and validates extracted fields against VAT compliance rules:
-     - Valid supplier VAT ID  
-     - Correct VAT rate based on country  
-     - Accurate VAT amount (mathematical validation)  
-   - The output is classified as a success or failure based on rule checks.
+3.  **Data Storage:** The result is saved in two formats:
+    * **Amazon DynamoDB:** For real-time status checks.
+    * **S3 as Parquet:** For long-term data warehousing and analytics.
 
-4. 💾 **Data Storage**  
-   Validation results are saved in:
-   - **DynamoDB** for real-time access and alerting  
-   - **Parquet files in S3** for long-term storage and analytics  
+4.  **Real-Time Alerting:** A `FAIL` status written to DynamoDB triggers the **`alert-lambda`** via a DynamoDB Stream, which sends notifications via **Slack** and **Amazon SES (email)**.
 
-5. 🔔 **Alerting System**  
-   - A **Slack message** is sent for every processed invoice  
-   - If validation fails, an **email alert via SES** is sent to notify the appropriate team  
-
-6. 📊 **Analytics Layer**  
-   - Data is made queryable through **Athena + Glue**, enabling analysis of:
-     - VAT trends  
-     - Failure rates  
-     - Invoice volumes  
-     - Validation errors  
-     - Country-level compliance performance
-
----
-## 🚧 Development Status
-
-This is the first published version of **VAT Compliance Monitor**, a personal project I built to showcase real-world applications of serverless cloud, AI-powered OCR, and automated invoice validation using AWS.
-
-✅ It already demonstrates a fully working pipeline — from PDF upload to OCR, VAT compliance checks, and alerting — entirely serverless and production-inspired.  
-⚠️ But during testing, I discovered two key challenges that need to be solved to make the system truly robust:
+5.  **Serverless Analytics:** An **AWS Glue Crawler** catalogs the Parquet files, making them instantly queryable in **Amazon Athena**.
 
 ---
 
-### ❗ Real-World Challenges (Identified During Testing)
+## 📦 Deployment
 
-1. **Many real-world PDF invoices fail Textract OCR**, due to:
-   - Scanned documents without text layers
-   - Vector-based PDFs that look readable but are invisible to OCR
-   - Layout variations (e.g., fonts, alignments, rotated text)
+The entire infrastructure for this project is defined in the `sam/template.yaml` file and deployed as a single, cohesive stack using the AWS SAM Framework.
 
-2. **Regex-based extraction is fragile and language-sensitive**:
-   - Even minor format changes (like line breaks or extra spaces) can break validation
-   - Invoices written in other languages don’t always match expected patterns
+#### Prerequisites
+-   AWS Account & IAM User
+-   AWS CLI (configured with credentials)
+-   AWS SAM CLI
+-   Docker Desktop
 
+#### Deployment Steps
+1.  **Clone the repository:**
+    ```bash
+    git clone [https://github.com/kevindellapiazza/vat-compliance-monitor.git](https://github.com/kevindellapiazza/vat-compliance-monitor.git)
+    cd vat-compliance-monitor
+    ```
+2.  **Build the application:**
+    This command builds the Docker image and packages the Lambda functions.
+    ```bash
+    sam build -t sam/template.yaml
+    ```
+3.  **Deploy the stack:**
+    This command starts a guided deployment. You will be prompted to enter parameters for your unique bucket name and secrets (emails, Slack URL).
+    ```bash
+    sam deploy --guided
+    ```
 ---
 
-## 🧪 Solutions in Progress
+## 🔧 Tools & Technologies
 
-To solve these two core issues, I’m now actively building two major upgrades:
-
-### 🔧 Solution 1: Preprocessing Pipeline (Lambda + `ocrmypdf`)
-
-- I’m adding a new **Lambda-based preprocessing layer** that runs `ocrmypdf` before Textract is called
-- This converts any uploaded invoice — even scanned images or vector-based PDFs — into a **clean, OCR-friendly format**
-- It performs deskewing, background cleanup, rotation correction, and adds a text layer automatically
-
-> ✅ Fully serverless using a Lambda container (to support heavier dependencies like `ocrmypdf`)
-
----
-
-### 🤖 Solution 2: NLP-Based Field Extraction (Amazon Comprehend)
-
-- I’m replacing brittle regex rules with **Named Entity Recognition (NER)** using **Amazon Comprehend**
-- This will extract fields like VAT ID, net amount, tax amount, and country in a more flexible way
-- It also supports **multiple languages**, giving the system greater adaptability
-
-> 🧠 This adds true **AI understanding** of invoice content — not just pattern matching
-
----
-
-🎯 My goal with these improvements is to reach **95%+ compatibility** across diverse invoice formats — even those I’ve never seen before, and in various languages.
-
-I'm intentionally publishing this version early to show:
-- A fully working AWS serverless pipeline
-- Real-world challenges I encountered (and how I plan to solve them)
-- That I understand not just the tech, but the product lifecycle: from MVP to scale
-
+-   **IaC:** AWS SAM CLI
+-   **Compute:** AWS Lambda (Python 3.12 Runtime & Docker Container Image)
+-   **AI / OCR:** AWS Textract
+-   **Storage:** Amazon S3, Amazon DynamoDB
+-   **Data Analytics:** AWS Glue, Amazon Athena
+-   **Alerting:** Amazon SES, Slack Webhooks
+-   **CI/CD:** GitHub Actions
+-   **Frontend:** Streamlit
 
 ---
 
 ## ✅ Continuous Integration (CI)
 
-This project uses **GitHub Actions** to automatically:
-
-- Check code quality with [Ruff](https://docs.astral.sh/ruff/)
-- Run tests with [Pytest](https://docs.pytest.org/)
-
-Every time code is pushed, these checks run to ensure the code is clean and working.
-
-![CI](https://github.com/kevindellapiazza/vat-compliance-monitor/actions/workflows/build-test.yml/badge.svg)
+This project uses **GitHub Actions** to automatically run quality checks on every commit:
+-   Check code quality with **Ruff**.
+-   Run tests with **Pytest**.
 
 ---
 
+## 🧠 Skills Demonstrated
+
+-   **Infrastructure as Code (IaC):** Designed and deployed a complete, multi-resource cloud application from a single, reusable AWS SAM template.
+-   **Serverless & Event-Driven Architecture:** Built a robust, scalable, and cost-efficient pipeline using S3 event triggers, Lambda functions, and DynamoDB Streams.
+-   **AI/ML Integration:** Leveraged AWS Textract for intelligent document processing (OCR) to extract structured data from unstructured PDFs.
+-   **Data Engineering:** Created a data pipeline that transforms and stores data in an analytics-optimized format (Parquet) and built a data catalog with AWS Glue for querying in Amazon Athena.
+-   **CI/CD & DevOps:** Implemented a Continuous Integration workflow with GitHub Actions to automate code quality checks and testing.
+-   **Cloud Security:** Applied the principle of least privilege with specific IAM roles for each service and managed secrets securely outside of version control using parameters.
+
+---
+
+## 🔐 Security Best Practices (Deployed in eu-central-1)
+
+| Layer     | Practice |
+|-----------|----------|
+| **S3**    | Server-side encryption (SSE-S3) enabled by default |
+| **IAM**   | Each Lambda has least-privilege IAM roles (S3 + logging only) |
+| **SES**   | Sandbox mode; verified sender & recipients only |
+| **Parquet Output** | Stored in private S3 path, queryable only via Athena |
+| **Monitoring** | CloudWatch logs + EventBridge alerts on failures |
+| **No Public Access** | All resources use private IAM-authenticated triggers |
+
+> ✅ Compliant with AWS’s Well-Architected security pillar — safe for real-world invoice data.
+
+---
 
 ## 💰 Cloud Cost Estimate (10,000 Invoices / Month)
 
@@ -191,50 +177,10 @@ All costs are based on **eu-central-1 (Frankfurt)** region, using AWS's public p
 
 ---
 
-## 🔐 Security Best Practices (Deployed in eu-central-1)
+## 💡 Future Improvements
 
-| Layer     | Practice |
-|-----------|----------|
-| **S3**    | Server-side encryption (SSE-S3) enabled by default |
-| **IAM**   | Each Lambda has least-privilege IAM roles (S3 + logging only) |
-| **SES**   | Sandbox mode; verified sender & recipients only |
-| **Parquet Output** | Stored in private S3 path, queryable only via Athena |
-| **Monitoring** | CloudWatch logs + EventBridge alerts on failures |
-| **No Public Access** | All resources use private IAM-authenticated triggers |
-
-> ✅ Compliant with AWS’s Well-Architected security pillar — safe for real-world invoice data.
-
----
-
-## 🔧 Tools & Technologies
-
-- **AWS Textract** – Intelligent document processing (OCR)  
-- **AWS Lambda** – Stateless compute for parsing and validation logic  
-- **Amazon S3** – Object storage for PDFs and Parquet files  
-- **Amazon DynamoDB** – Real-time NoSQL database for structured validation results  
-- **Amazon Athena + AWS Glue** – Serverless analytics for historical queries  
-- **Amazon SES** – Automated email alerts on validation failures  
-- **Slack API** – Real-time operational notifications  
-- **Streamlit** – Frontend interface for testing and demonstration  
-
----
-
-## 🧠 Skills Demonstrated
-
-- **AI/ML Integration** – Used AWS Textract to extract structured data from unstructured invoices (OCR).  
-- **Cloud-Native Development** – Designed a fully serverless pipeline using AWS Lambda, S3, and DynamoDB.  
-- **Event-Driven Architecture** – Built real-time workflows triggered by document uploads.  
-- **Compliance Logic Automation** – Applied business rules (e.g., VAT validation) programmatically at scale.  
-- **Alerting & Monitoring** – Integrated Slack and SES for automated validation alerts.  
-- **Data Modeling** – Stored validation results in formats optimized for both live dashboards and analytics (DynamoDB + Parquet).  
-- **Analytics Enablement** – Queried processed data using Athena + Glue for trend and compliance insights.  
-
----
-
-## 📦 Deployment Notes
-
-This project was originally deployed manually using the AWS Console.  
-The included `sam/template.yaml` file is a clean infrastructure blueprint for redeploying the stack using **AWS SAM** if desired.
+-   **Implement Full CI/CD:** The current GitHub Action performs CI (testing). The next step is to add a CD (Continuous Deployment) stage that automatically runs `sam deploy` on every successful merge to the `main` branch.
+-   **Replace Regex with Amazon Comprehend:** To make data extraction even more robust and language-agnostic, the Regex-based logic could be replaced with a custom Named Entity Recognition (NER) model trained using Amazon Comprehend.
 
 ---
 
