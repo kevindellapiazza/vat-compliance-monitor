@@ -30,6 +30,18 @@ This diagram shows how invoices flow through the system from upload to validatio
 
 ![Architecture Diagram](docs/VCMarchitecture.drawio.png)
 
+### Medallion layers
+The project follows the Medallion Architecture approach, structuring data into three distinct layers:
+
+* **Bronze:** for storing raw, ingested data.
+* **Silver:** for cleaned, processed, and transformed data.
+* **Gold:** for business-ready datasets.
+
+![Architecture Diagram](docs/VCM_medallion_architecture.drawio.png)
+
+
+This layered design improves data quality, reliability, and usability. **[Full methodology here](https://github.com/kevindellapiazza/data-foundations-for-ai)**
+
 ---
 
 ## 🚀 How It Works (Step-by-Step)
