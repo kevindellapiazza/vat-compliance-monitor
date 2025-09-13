@@ -11,7 +11,7 @@
 
 **VCM (VAT Compliance Monitor)** is a production-grade, event-driven pipeline that automates the validation of European VAT invoices. The entire system is defined and deployed using **Infrastructure as Code (IaC)** with the AWS SAM Framework.
 
-This project solves a critical business problem by transforming unstructured, real-world PDF invoices—**including low-quality scans**—into validated, auditable, and analytics-ready records, all automatically.
+This project solves a critical business problem by transforming unstructured, real-world PDF invoices **including low-quality scans** into validated, auditable, and analytics-ready records, all automatically.
 
 ---
 
@@ -63,7 +63,7 @@ This layered design improves data quality, reliability, and usability. **[Full m
 
 ## ✨ Key Features & Architectural Highlights
 
-1.  **100% Infrastructure as Code (IaC):** The entire cloud infrastructure—S3 buckets, DynamoDB tables, all three Lambda functions, IAM roles, and event triggers—is defined in a single `template.yaml` file. The whole system can be reliably deployed in any AWS account with a single `sam deploy` command.
+1.  **100% Infrastructure as Code (IaC):** The entire cloud infrastructure: S3 buckets, DynamoDB tables, all three Lambda functions, IAM roles, and event triggers, is defined in a single `template.yaml` file. The whole system can be reliably deployed in any AWS account with a single `sam deploy` command.
 
 2.  **Automated Preprocessing for "Dirty" PDFs:** The system solves the common problem of unreadable documents. A Docker-based Lambda function uses `ocrmypdf` to clean and apply a text layer to any incoming PDF, ensuring even scanned documents are machine-readable.
 
@@ -79,7 +79,7 @@ This layered design improves data quality, reliability, and usability. **[Full m
 -   ❌ Small VAT mismatches can lead to major penalties, audit failures, or rejected tax filings.
 -   📉 Most companies still rely on spreadsheets and shared drives for compliance workflows.
 
-VCM automates this process end-to-end—intelligently, scalably, and cost-effectively. As a data and cloud engineer, I built VCM to reflect the kind of automation modern finance teams need.
+As a data and cloud engineer, I designed VCM to showcase how automation can transform financial operations.
 
 ---
 
@@ -87,10 +87,10 @@ VCM automates this process end-to-end—intelligently, scalably, and cost-effect
 
 A system that is:
 
-- ✅ **Smart Compliance** — flags errors in incorrectly filled invoices and confirms valid ones
-- ✅ **Scalable** — can handle hundreds of invoices per day  
-- ✅ **Cost-effective** — runs on AWS with near-zero infrastructure cost  
-- ✅ **Fully automated** — no human intervention required  
+- ✅ **Smart Compliance:** flags errors in incorrectly filled invoices and confirms valid ones
+- ✅ **Scalable:** can handle hundreds of invoices per day  
+- ✅ **Cost-effective:** runs on AWS with near-zero infrastructure cost  
+- ✅ **Fully automated:** no human intervention required  
 
 ---
 
@@ -126,7 +126,31 @@ All costs are based on **eu-central-1 (Frankfurt)** region, using AWS's public p
 | **Monitoring** | CloudWatch logs + EventBridge alerts on failures |
 | **No Public Access** | All resources use private IAM-authenticated triggers |
 
-> ✅ Compliant with AWS’s Well-Architected security pillar — safe for real-world invoice data.
+> ✅ Compliant with AWS’s Well-Architected security pillar.
+
+---
+
+## 🚧 Limitations & possible solutions
+
+The current pipeline is fully functional but relies on a **Regex-based approach** for data extraction within the `textract-lambda`.  
+While effective for structured invoices, this is the main limitation when dealing with a wide variety of real-world document layouts.
+
+Since this is a **demonstration project**, the Regex solution was chosen for its simplicity, speed of implementation, and cost-effectiveness.  
+In a production-grade system, more advanced AI-driven strategies would be preferable.
+
+Two main paths could replace the Regex logic and make the platform more intelligent and format-agnostic:
+
+-   **Option A: Custom Model with Amazon Comprehend**  
+    Train a custom Named Entity Recognition (NER) model to detect specific invoice fields.  
+    - ✅ **Pro:** AWS-native, data remains within the secure environment, compliance-friendly (GDPR).  
+    - ⚠️ **Trade-Off:** Must choose between:  
+        - **Real-Time Endpoint:** Low latency (seconds) but continuous hourly cost.  
+        - **Asynchronous Job:** Very cheap (pay-per-use) but adds minutes of latency.
+
+-   **Option B: External LLM API (e.g., Gemini or GPT-4)**  
+    Use a Large Language Model for extraction.  
+    - ✅ **Pro:** Highest accuracy, no training required, flexible field extraction with just a prompt, real-time results.  
+    - ⚠️ **Trade-Off:** Sensitive data leaves the AWS environment, raising privacy/compliance concerns. More expensive per invoice than Comprehend async.
 
 ---
 
@@ -166,7 +190,7 @@ The entire infrastructure for this project is defined in the `sam/template.yaml`
 
 -   **IaC:** AWS SAM CLI
 -   **Compute:** AWS Lambda (Python 3.12 Runtime & Docker Container Image)
--   **AI / OCR:** AWS Textract
+-   **AI / OCR:** AWS Textract, Amazon Comprehend
 -   **Storage:** Amazon S3, Amazon DynamoDB
 -   **Data Analytics:** AWS Glue, Amazon Athena
 -   **Alerting:** Amazon SES, Slack Webhooks
@@ -191,13 +215,6 @@ The entire infrastructure for this project is defined in the `sam/template.yaml`
 This project uses **GitHub Actions** to automatically run quality checks on every commit:
 -   Check code quality with **Ruff**.
 -   Run tests with **Pytest**.
-
----
-
-## 💡 Future Improvements
-
--   **Implement Full CI/CD:** The current GitHub Action performs CI (testing). The next step is to add a CD (Continuous Deployment) stage that automatically runs `sam deploy` on every successful merge to the `main` branch.
--   **Replace Regex with Amazon Comprehend:** To make data extraction even more robust and language-agnostic, the Regex-based logic could be replaced with a custom Named Entity Recognition (NER) model trained using Amazon Comprehend.
 
 ---
 
