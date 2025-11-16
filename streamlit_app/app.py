@@ -33,8 +33,16 @@ st.title("📤 VCM — Invoice Upload & Validation")
 
 st.markdown(
     """
-    Upload a PDF invoice to trigger the end-to-end AWS serverless pipeline.
-    The system will perform OCR, extract data, and run compliance checks in real-time.
+    This demo showcases a cloud-native **VAT document analyzer**, built on a
+    serverless **AWS architecture** — solving key problems in financial processing:
+    **⏱️ Time delays** and **❌ costly manual errors**.
+
+    - Upload a single invoice (PDF only) from a supported country: IT, DE, FR, ES, BE, CH.
+    - Or download one of the 5 sample invoices at the end of the page
+    - Instantly see validation results
+
+    ⚠️ **Note:** This demo supports one invoice at a time.
+    **Please delete the previous upload before submitting a new one.**
     """
 )
 
