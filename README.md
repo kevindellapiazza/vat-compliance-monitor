@@ -94,6 +94,20 @@ A system that is:
 
 ---
 
+## 📊 Analytics-Ready Data Lake
+
+The pipeline is designed for more than just real-time processing; it creates an **analytics-ready data lake**.
+
+1.  The `VcmTextractLambda` saves all results to an S3 bucket in the high-efficiency columnar **Parquet** format.
+2.  An **AWS Glue Crawler** scans these files and automatically populates the AWS Data Catalog.
+3.  The data is immediately available for complex SQL analysis via **AWS Athena**, without the need for a database.
+
+The query below successfully retrieves data from the data lake and returns the results from our batch test, confirming that the pipeline is fully operational from upload to analysis.
+
+![Athena Query Results](docs/athena_test.png)
+
+---
+
 ## 💰 Cloud Cost Estimate (10,000 Invoices / Month)
 
 This system is optimized for affordability, even at an enterprise scale.  
