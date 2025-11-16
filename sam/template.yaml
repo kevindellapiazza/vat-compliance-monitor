@@ -2,18 +2,20 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
   VAT Compliance Monitor (VCM) - IaC Stack
-  This stack deploys the complete invoice processing pipeline, including the data analytics layer with AWS Glue.
+  A production-grade, serverless pipeline deployed via Infrastructure as Code (IaC). 
+  Features include decoupled service architecture, least-privilege IAM, and secure 
+  secrets management.
 
 Parameters:
   InvoiceBucketName:
     Type: String
-    Description: A globally unique name for the S3 bucket to be created.
+    Description: A globally unique name for the S3 bucket to be created (Raw/Processed Invoices).
     Default: vcm-kevin-pipeline-invoices
   
-  SlackWebhookUrl:
+  SlackSecretName:
     Type: String
-    Description: The secret Slack Webhook URL for sending notifications.
-    NoEcho: true
+    Description: The name of the AWS Secrets Manager secret holding the Slack Webhook URL.
+    Default: vcm/slack-webhook
   
   AlertEmailFrom:
     Type: String
@@ -23,14 +25,58 @@ Parameters:
     Type: String
     Description: The email address to send failure alerts to.
 
+  ConfigBucketName:
+    Type: String
+    Description: The S3 bucket storing configuration files and analytics output (Parquet).
+    Default: vcm-config-kevin
+
+  ParquetOutputPrefix:
+    Type: String
+    Description: The S3 prefix for storing analytics-ready Parquet files.
+    Default: data/athena_output/
+
+  AllowedRatesFileKey:
+    Type: String
+    Description: The full S3 key for the allowed VAT rates configuration file.
+    Default: config/allowed-vat-rates.csv
+
 Resources:
-  # 1. S3 Bucket
+  # 1a. S3 Invoice Bucket (Input and Processing)
+  # Block Public Access, Versioning, and Encryption enabled by default.
   InvoiceBucket:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref InvoiceBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
 
-  # 2. DynamoDB Table
+  # 1b. S3 Config/Analytics Bucket
+  # S3 bucket for Parquet data and configuration CSV.
+  ConfigBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref ConfigBucketName
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+              
+  # 2. DynamoDB Status Table
+  # Stores the real-time status of each invoice. PITR enabled for resilience.
   InvoiceStatusTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -38,10 +84,13 @@ Resources:
       AttributeDefinitions: [{AttributeName: invoice_id, AttributeType: S}]
       KeySchema: [{AttributeName: invoice_id, KeyType: HASH}]
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
       StreamSpecification:
-        StreamViewType: NEW_AND_OLD_IMAGES
+        StreamViewType: NEW_AND_OLD_IMAGES # Triggers VcmAlertLambda
 
-  # 3. Preprocessing Lambda
+  # 3. Preprocessing Lambda (Docker-based OCR)
+  # Orchestrates the OCR process using a heavy Docker image.
   VcmPreprocessFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -49,8 +98,9 @@ Resources:
       PackageType: Image
       Architectures: [x86_64]
       MemorySize: 2048
-      Timeout: 90
+      Timeout: 90 # Extended timeout for OCRmyPDF process
       Policies:
+        # IAM: Least-privilege R/W to specific S3 prefixes
         - Statement:
             - Effect: Allow
               Action: [s3:GetObject, s3:HeadObject]
@@ -71,28 +121,42 @@ Resources:
       DockerContext: ../docker
       Dockerfile: Dockerfile
 
-  # 4. Textract Lambda
+  # 4. Textract Lambda (Core Logic)
+  # Extracts data, validates VAT rules, stores status, and sends Slack notification.
   VcmTextractLambda:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: vcm-textract-lambda-iac
       CodeUri: ../src/vcm-textract-lambda/
       Handler: app.lambda_handler
-      Runtime: python3.12
+      Runtime: python3.11 # Aligned with local build environment
       MemorySize: 512
       Timeout: 60
       Environment:
         Variables:
           STATUS_TABLE_NAME: !Ref InvoiceStatusTable
-          SLACK_WEBHOOK_URL: !Ref SlackWebhookUrl
+          SLACK_SECRET_NAME: !Ref SlackSecretName
+          CONFIG_BUCKET: !Ref ConfigBucketName
+          CONFIG_FILE_KEY: !Ref AllowedRatesFileKey
+          PARQUET_BUCKET: !Ref ConfigBucketName
+          PARQUET_PREFIX: !Ref ParquetOutputPrefix
       Policies:
+        # 1. IAM: Secure access to Secrets Manager
+        - Statement:
+          - Effect: Allow
+            Action: [secretsmanager:GetSecretValue]
+            Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SlackSecretName}-*"
+        # 2. General access (S3, DynamoDB, Textract)
         - S3ReadPolicy: {BucketName: !Ref InvoiceBucketName}
         - DynamoDBWritePolicy: {TableName: !Ref InvoiceStatusTable}
         - TextractPolicy: {Statement: [{Effect: Allow, Action: ['textract:AnalyzeDocument', 'textract:DetectDocumentText'], Resource: '*'}]}
+        # 3. Access to configuration/parquet buckets (using new parameters)
         - Statement:
           - Effect: Allow
             Action: [s3:GetObject, s3:PutObject]
-            Resource: "arn:aws:s3:::vcm-config-kevin/*"
+            Resource: 
+              - !Sub "arn:aws:s3:::${ConfigBucketName}/${AllowedRatesFileKey}"
+              - !Sub "arn:aws:s3:::${ConfigBucketName}/${ParquetOutputPrefix}*"
       Events:
         PreprocessCompleteTrigger:
           Type: S3
@@ -102,14 +166,15 @@ Resources:
             Filter:
               S3Key: {Rules: [{Name: prefix, Value: processed/}, {Name: suffix, Value: .pdf}]}
 
-  # 5. Alert Lambda
+  # 5. Alert Lambda (SES)
+  # Triggers on DynamoDB status=FAIL to send a critical email alert.
   VcmAlertLambda:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: vcm-alert-lambda-iac
       CodeUri: ../src/vcm-alert-lambda/
       Handler: lambda_function.lambda_handler
-      Runtime: python3.12
+      Runtime: python3.11
       MemorySize: 128
       Timeout: 30
       Environment:
@@ -117,6 +182,7 @@ Resources:
           ALERT_EMAIL_FROM: !Ref AlertEmailFrom
           ALERT_EMAIL_TO: !Ref AlertEmailTo
       Policies:
+        # IAM: Least-privilege SES (only for the verified source identity)
         - Statement:
           - Effect: Allow
             Action:
@@ -134,7 +200,8 @@ Resources:
               Filters:
                 - Pattern: '{ "eventName": ["INSERT"], "dynamodb": { "NewImage": { "status": { "S": ["FAIL"] } } } }'
   
-  # 6. Data Analytics Layer
+  # 6. Data Analytics Layer (Glue)
+  # Defines the Glue database and crawler to catalog Parquet files for Athena querying.
   GlueDatabase:
     Type: AWS::Glue::Database
     Properties:
@@ -155,6 +222,7 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
       Policies:
+        # IAM: Granular access to the Parquet and config buckets
         - PolicyName: S3AccessForGlueCrawler
           PolicyDocument:
             Version: '2012-10-17'
@@ -162,18 +230,19 @@ Resources:
               - Effect: Allow
                 Action: [s3:GetObject, s3:ListBucket]
                 Resource:
-                  - "arn:aws:s3:::vcm-config-kevin"
-                  - "arn:aws:s3:::vcm-config-kevin/*"
+                  - !Sub "arn:aws:s3:::${ConfigBucketName}"
+                  - !Sub "arn:aws:s3:::${ConfigBucketName}/${ParquetOutputPrefix}*"
 
   VcmDataCrawler:
     Type: AWS::Glue::Crawler
+    DependsOn: [ConfigBucket, GlueDatabase]
     Properties:
       Name: vcm-data-crawler
       Role: !GetAtt GlueCrawlerRole.Arn
       DatabaseName: !Ref GlueDatabase
       Targets:
         S3Targets:
-          - Path: "s3://vcm-config-kevin/data/athena_output/"
+          - Path: !Sub "s3://${ConfigBucketName}/${ParquetOutputPrefix}"
       SchemaChangePolicy:
         UpdateBehavior: "UPDATE_IN_DATABASE"
         DeleteBehavior: "LOG"
