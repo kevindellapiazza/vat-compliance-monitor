@@ -65,7 +65,7 @@ def load_allowed_rates():
             country = row['country'].upper()
             rate = float(row['rate'])
             rates.setdefault(country, []).append(rate)
-        
+
         CACHED_ALLOWED_RATES = rates  # Cache the result
         return rates
     except Exception as e:
@@ -86,14 +86,14 @@ def get_slack_webhook():
     try:
         response = secrets_manager.get_secret_value(SecretId=SLACK_SECRET_NAME)
         secret_string = response['SecretString']
-        
+
         # Handle both plain text secrets and JSON secrets (e.g., {"url":"..."})
         try:
             secret_data = json.loads(secret_string)
             CACHED_SLACK_WEBHOOK_URL = secret_data.get('webhook_url', secret_string)
         except json.JSONDecodeError:
             CACHED_SLACK_WEBHOOK_URL = secret_string
-            
+
         logger.info("Slack secret retrieved and cached.")
         return CACHED_SLACK_WEBHOOK_URL
     except Exception as e:
@@ -143,13 +143,13 @@ def normalize_number(value: str):
     if not value:
         return None
     v = value.strip().replace('€', '').replace('$', '').replace('£', '').replace('CHF', '')
-    
+
     # Handle ambiguous formats like "1.234,56" (German) vs "1,234.56" (English)
     if '.' in v and ',' in v:
         v = v.replace('.', '').replace(',', '.')  # Assume German-style
     else:
         v = v.replace(',', '')  # Assume English-style or simple number
-    
+
     try:
         return float(v)
     except ValueError:
@@ -167,7 +167,7 @@ def save_parquet_to_s3(data: dict, key: str):
         tbl = pa.Table.from_pandas(df)
         tmp_path = f"/tmp/{key}.parquet"
         pq.write_table(tbl, tmp_path)
-        
+
         output_key = f"{PARQUET_PREFIX}{key}.parquet"
         logger.info(f"Uploading Parquet file to s3://{PARQUET_BUCKET}/{output_key}")
         with open(tmp_path, 'rb') as f:
@@ -205,10 +205,16 @@ def lambda_handler(event, context):
     logger.info("Text extraction complete.")
 
     # --- 2. Field Extraction (Regex) ---
-    vat_id_raw = extract_field(r'(?:VAT\s*(?:ID|No|Number)|Partita\s*IVA)\s*[:\-]?\s*([A-Za-z0-9]+)', full_text)
-    vat_rate_str = extract_field(r'(?:VAT|IVA|TVA|MwSt)\s*\(?\s*([\d.,]+)\s*%?\s*\)?', full_text)
-    vat_amount_str = extract_field(r'(?:VAT|IVA|TVA|MwSt)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£CHF]+)', full_text)
-    net_total_str = extract_field(r'(?:Subtotal|Net\s*Total|Imponibile)\s*[:\-]?\s*([\u20AC\d.,$£CHF]+)', full_text)
+    # Break long regex patterns into variables for readability
+    pat_vat_id = r'(?:VAT\s*(?:ID|No|Number)|Partita\s*IVA)\s*[:\-]?\s*([A-Za-z0-9]+)'
+    pat_vat_rate = r'(?:VAT|IVA|TVA|MwSt)\s*\(?\s*([\d.,]+)\s*%?\s*\)?'
+    pat_vat_amount = r'(?:VAT|IVA|TVA|MwSt)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£CHF]+)'
+    pat_net_total = r'(?:Subtotal|Net\s*Total|Imponibile)\s*[:\-]?\s*([\u20AC\d.,$£CHF]+)'
+
+    vat_id_raw = extract_field(pat_vat_id, full_text)
+    vat_rate_str = extract_field(pat_vat_rate, full_text)
+    vat_amount_str = extract_field(pat_vat_amount, full_text)
+    net_total_str = extract_field(pat_net_total, full_text)
 
     # --- 3. Data Normalization ---
     raw_rate = float(vat_rate_str.replace(',', '.')) if vat_rate_str else None
@@ -216,12 +222,15 @@ def lambda_handler(event, context):
     vat_amount = normalize_number(vat_amount_str)
     net_total = normalize_number(net_total_str)
     currency_symbol = extract_currency(vat_amount_str or net_total_str or "")
-    
+
     vid = (vat_id_raw or "").replace(' ', '').upper()
     m = re.match(r'^([A-Z]{2})', vid)  # Extract country code from VAT ID
     country = m.group(1) if m else None
 
-    logger.info(f"Extracted data: [Country: {country}, VAT Rate: {vat_rate}, VAT Amount: {vat_amount}, Net: {net_total}]")
+    logger.info(
+        f"Extracted data: [Country: {country}, VAT Rate: {vat_rate}, "
+        f"VAT Amount: {vat_amount}, Net: {net_total}]"
+    )
 
     # --- 4. Validation Logic ---
     allowed_rates = load_allowed_rates()
@@ -240,16 +249,20 @@ def lambda_handler(event, context):
     elif vat_rate not in allowed_rates.get(country, []):
         reasons.append(f"Invalid VAT rate {vat_rate} for country {country}")
         status = "FAIL"
-    
+
     # Mathematical check
     if status == "PASS" and net_total:
         expected_vat = round(net_total * vat_rate, 2)
         tolerance = 0.02  # Allow for small rounding differences
         if abs(expected_vat - vat_amount) > tolerance:
-            reasons.append(f"Math check failed: expected {expected_vat}, got {vat_amount}")
+            reasons.append(
+                f"Math check failed: expected {expected_vat}, got {vat_amount}"
+            )
             status = "FAIL"
 
-    logger.info(f"Validation result: {status}. Reason: {'; '.join(reasons) or 'All checks passed'}")
+    logger.info(
+        f"Validation result: {status}. Reason: {'; '.join(reasons) or 'All checks passed'}"
+    )
 
     # --- 5. Store Results ---
     result_item = {
@@ -271,21 +284,21 @@ def lambda_handler(event, context):
         k: (Decimal(str(v)) if isinstance(v, (float, int)) else v)
         for k, v in result_item.items() if v is not None
     }
-    
+
     try:
         # 5a. Save to DynamoDB
         table.put_item(Item=dynamo_item)
         logger.info(f"Result for {invoice_id} saved to DynamoDB.")
-        
+
         # 5b. Save to S3 (Parquet) for Athena
         save_parquet_to_s3(result_item, invoice_id)
-        
+
         # 5c. Send Slack notification
         send_slack_notification(
             f"Invoice {invoice_id} | Country: {country} | Status: {status} | "
             f"Reason: {result_item['reason']}"
         )
-        
+
     except Exception as e:
         logger.error(f"Failed to store results for {invoice_id}: {e}")
         raise
