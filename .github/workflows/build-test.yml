@@ -1,26 +1,33 @@
 name: build-test
 
+# Trigger on all pushes and pull requests
 on: [push, pull_request]
+
+# Secure the workflow by default:
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      # Use v4 of the checkout action
+      - name: Check out repository code
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: 'pip' # Enable caching for pip dependencies
 
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pytest ruff
 
-      - name: Run Ruff (code linting)
+      - name: Run Ruff (code linting and formatting)
         run: ruff check .
 
       - name: Run Pytest (unit tests)
         run: pytest
-
