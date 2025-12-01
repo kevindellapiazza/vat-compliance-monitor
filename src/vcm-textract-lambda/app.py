@@ -4,7 +4,6 @@
 import boto3
 import csv
 import json
-import re
 import datetime
 import os
 import urllib3
@@ -15,19 +14,19 @@ import logging
 from decimal import Decimal
 
 # === Logging ===
-# Configure logger for CloudWatch
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # === AWS Clients ===
-# Initialize clients outside the handler for connection reuse
 s3 = boto3.client('s3')
 textract = boto3.client('textract')
 dynamodb = boto3.resource('dynamodb')
 secrets_manager = boto3.client('secretsmanager')
 
+# === BEDROCK CLIENT ===
+bedrock = boto3.client(service_name='bedrock-runtime', region_name='eu-central-1')
+
 # === CONFIGURATION ===
-# Load configuration from environment variables for decoupling
 STATUS_TABLE_NAME = os.environ['STATUS_TABLE_NAME']
 CONFIG_BUCKET = os.environ['CONFIG_BUCKET']
 CONFIG_FILE_KEY = os.environ['CONFIG_FILE_KEY']
@@ -35,24 +34,18 @@ PARQUET_BUCKET = os.environ['PARQUET_BUCKET']
 PARQUET_PREFIX = os.environ['PARQUET_PREFIX']
 SLACK_SECRET_NAME = os.environ['SLACK_SECRET_NAME']
 
-# Initialize DynamoDB Table resource
 table = dynamodb.Table(STATUS_TABLE_NAME)
 
 # === GLOBAL CACHE ===
-# Cache expensive resources (secrets, HTTP connections) globally
 CACHED_SLACK_WEBHOOK_URL = None
 HTTP_POOL = urllib3.PoolManager()
 CACHED_ALLOWED_RATES = None
 
+# --- HELPER FUNCTIONS ---
 
 def load_allowed_rates():
-    """
-    Loads the allowed VAT rates configuration from S3.
-    Caches the result globally to avoid repeated S3 GetObject calls.
-    """
     global CACHED_ALLOWED_RATES
     if CACHED_ALLOWED_RATES:
-        logger.info("Using cached VAT rates.")
         return CACHED_ALLOWED_RATES
 
     logger.info(f"Loading VAT rates from s3://{CONFIG_BUCKET}/{CONFIG_FILE_KEY}")
@@ -66,102 +59,43 @@ def load_allowed_rates():
             rate = float(row['rate'])
             rates.setdefault(country, []).append(rate)
 
-        CACHED_ALLOWED_RATES = rates  # Cache the result
+        CACHED_ALLOWED_RATES = rates
         return rates
     except Exception as e:
         logger.error(f"Failed to load config file: {e}")
         raise
 
-
 def get_slack_webhook():
-    """
-    Retrieves the Slack Webhook URL from AWS Secrets Manager.
-    Caches the secret globally to avoid repeated API calls and costs.
-    """
     global CACHED_SLACK_WEBHOOK_URL
     if CACHED_SLACK_WEBHOOK_URL:
         return CACHED_SLACK_WEBHOOK_URL
 
-    logger.info(f"Retrieving secret '{SLACK_SECRET_NAME}' from Secrets Manager...")
     try:
         response = secrets_manager.get_secret_value(SecretId=SLACK_SECRET_NAME)
         secret_string = response['SecretString']
-
-        # Handle both plain text secrets and JSON secrets (e.g., {"url":"..."})
         try:
             secret_data = json.loads(secret_string)
             CACHED_SLACK_WEBHOOK_URL = secret_data.get('webhook_url', secret_string)
         except json.JSONDecodeError:
             CACHED_SLACK_WEBHOOK_URL = secret_string
-
-        logger.info("Slack secret retrieved and cached.")
         return CACHED_SLACK_WEBHOOK_URL
     except Exception as e:
-        logger.error(f"Critical error retrieving Slack secret: {e}")
-        raise e
-
+        logger.error(f"Error retrieving Slack secret: {e}")
+        return None
 
 def send_slack_notification(msg):
-    """
-    Sends a notification to Slack using the securely retrieved webhook.
-    Uses a global PoolManager for connection reuse.
-    """
     try:
         hook = get_slack_webhook()
         if hook:
             HTTP_POOL.request(
-                "POST",
-                hook,
+                "POST", hook,
                 body=json.dumps({"text": msg}).encode(),
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json"}
             )
-            logger.info("Slack notification sent.")
-        else:
-            logger.warning("SLACK_WEBHOOK_URL not found. Skipping notification.")
     except Exception as e:
-        # Log the error but do not fail the Lambda execution
         logger.error(f"Error sending Slack notification: {e}")
 
-
-def extract_field(pattern, text):
-    """Utility function to extract a field using regex."""
-    m = re.search(pattern, text, flags=re.IGNORECASE)
-    return m.group(1).strip() if m else None
-
-
-def extract_currency(text):
-    """Utility function to extract a currency symbol."""
-    match = re.search(r'([\u20AC$£CHF])[\d,.]+', text)
-    return match.group(1) if match else None
-
-
-def normalize_number(value: str):
-    """
-    Normalizes a string representation of a number into a float.
-    Handles different decimal/thousand separators.
-    """
-    if not value:
-        return None
-    v = value.strip().replace('€', '').replace('$', '').replace('£', '').replace('CHF', '')
-
-    # Handle ambiguous formats like "1.234,56" (German) vs "1,234.56" (English)
-    if '.' in v and ',' in v:
-        v = v.replace('.', '').replace(',', '.')  # Assume German-style
-    else:
-        v = v.replace(',', '')  # Assume English-style or simple number
-
-    try:
-        return float(v)
-    except ValueError:
-        logger.warning(f"Could not normalize number: {value}")
-        return None
-
-
 def save_parquet_to_s3(data: dict, key: str):
-    """
-    Converts the result dictionary to a Parquet file and uploads to S3
-    for the analytics layer (Athena).
-    """
     try:
         df = pd.DataFrame([data])
         tbl = pa.Table.from_pandas(df)
@@ -169,102 +103,165 @@ def save_parquet_to_s3(data: dict, key: str):
         pq.write_table(tbl, tmp_path)
 
         output_key = f"{PARQUET_PREFIX}{key}.parquet"
-        logger.info(f"Uploading Parquet file to s3://{PARQUET_BUCKET}/{output_key}")
         with open(tmp_path, 'rb') as f:
             s3.upload_fileobj(f, PARQUET_BUCKET, output_key)
         os.remove(tmp_path)
     except Exception as e:
-        logger.error(f"Failed to save Parquet file: {e}")
+        logger.error(f"Failed to save Parquet: {e}")
 
+def is_valid_pdf(bucket, key):
+    try:
+        # read 4 byte (Range request)
+        response = s3.get_object(
+            Bucket=bucket,
+            Key=key,
+            Range='bytes=0-4'
+        )
+        header = response['Body'].read()
+        if header.startswith(b'%PDF'):
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error checking file header: {e}")
+        return False
+
+# --- AI EXTRACTION ENGINE (Claude 3 Haiku) ---
+
+def extract_invoice_data_with_ai(ocr_text):
+    """
+    Uses AWS Bedrock to extract structured data from OCR text.
+    Replaces fragile Regex logic with semantic understanding.
+    """
+    # === PROMPT (Formatted to avoid E501 Line too long errors) ===
+    prompt = f"""
+    You are a financial AI. Extract these fields from the invoice text below into JSON:
+    1. supplier_vat_id: The full VAT number (e.g., IT123456789 or CHE-123.456.789).
+    2. vat_rate: The tax percentage as a decimal (e.g. 0.22). If multiple, take the main one.
+    3. vat_amount: The tax amount (numeric).
+    4. net_total: The total amount BEFORE tax (numeric).
+    5. currency: Symbol (e.g., €, $, £, CHF).
+    6. country: The 2-letter ISO country code.
+    RULE: If VAT ID starts with "CHE", country MUST be "CH".
+    Return ONLY valid JSON. If a field is missing, use null.
+    TEXT:
+    {ocr_text[:15000]}
+    """
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 1000,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0
+    })
+
+    try:
+        response = bedrock.invoke_model(
+            modelId="anthropic.claude-3-haiku-20240307-v1:0",
+            body=body
+        )
+
+        response_body = json.loads(response.get("body").read())
+        ai_result = response_body["content"][0]["text"]
+
+        # Clean up markdown
+        ai_result = ai_result.replace("```json", "").replace("```", "").strip()
+
+        return json.loads(ai_result)
+
+    except Exception as e:
+        logger.error(f"AI Extraction Failed: {e}")
+        return None
+
+# --- MAIN HANDLER ---
 
 def lambda_handler(event, context):
-    """
-    Main Lambda handler.
-    Orchestrates the Textract analysis, data extraction, validation,
-    and storage of results.
-    """
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = event['Records'][0]['s3']['object']['key']
     invoice_id = os.path.basename(key).replace('.pdf', '')
-    logger.info(f"Processing invoice_id: {invoice_id} from s3://{bucket}/{key}")
 
-    # --- 1. Textract Analysis ---
+    # === SECURITY CHECK: Demo Mode Limit ===
+    # If file > 2MB, block it to prevent cost abuse
+    if event['Records'][0]['s3']['object']['size'] > 2 * 1024 * 1024:
+        logger.warning(f"File {key} too large (>2MB). Skipping for Demo Mode.")
+        return {'statusCode': 400, 'body': 'File too large'}
+
+    # If file is not a PDF, stop processing
+    if not is_valid_pdf(bucket, key):
+        logger.warning(f"File {key} is NOT a valid PDF. Skipping.")
+        # s3.delete_object(Bucket=bucket, Key=key)
+        return {'statusCode': 400, 'body': 'Invalid file type'}
+
+    logger.info(f"Processing {invoice_id} from s3://{bucket}/{key}")
+
+    # 1. Textract (OCR Only)
     try:
-        resp = textract.analyze_document(
-            Document={'S3Object': {'Bucket': bucket, 'Name': key}},
-            FeatureTypes=["FORMS", "TABLES"],
-        )
-    except Exception:
-        logger.warning("AnalyzeDocument failed, falling back to DetectDocumentText.")
+        # DetectDocumentText because we only need raw text for the LLM
         resp = textract.detect_document_text(
             Document={'S3Object': {'Bucket': bucket, 'Name': key}}
         )
+        lines = [b['Text'] for b in resp['Blocks'] if b['BlockType'] == 'LINE']
+        full_text = '\n'.join(lines)
+        logger.info("Text extraction complete.")
+    except Exception as e:
+        logger.error(f"Textract failed: {e}")
+        raise e
 
-    lines = [b['Text'] for b in resp['Blocks'] if b['BlockType'] == 'LINE']
-    full_text = '\n'.join(lines)
-    logger.info("Text extraction complete.")
+    # 2. AI Extraction (Bedrock)
+    logger.info("🤖 Invoking Bedrock AI...")
+    extracted = extract_invoice_data_with_ai(full_text)
 
-    # --- 2. Field Extraction (Regex) ---
-    # Break long regex patterns into variables for readability
-    pat_vat_id = r'(?:VAT\s*(?:ID|No|Number)|Partita\s*IVA)\s*[:\-]?\s*([A-Za-z0-9]+)'
-    pat_vat_rate = r'(?:VAT|IVA|TVA|MwSt)\s*\(?\s*([\d.,]+)\s*%?\s*\)?'
-    pat_vat_amount = r'(?:VAT|IVA|TVA|MwSt)\s*\([\d.,]+%\)\s*([\u20AC\d.,$£CHF]+)'
-    pat_net_total = r'(?:Subtotal|Net\s*Total|Imponibile)\s*[:\-]?\s*([\u20AC\d.,$£CHF]+)'
-
-    vat_id_raw = extract_field(pat_vat_id, full_text)
-    vat_rate_str = extract_field(pat_vat_rate, full_text)
-    vat_amount_str = extract_field(pat_vat_amount, full_text)
-    net_total_str = extract_field(pat_net_total, full_text)
-
-    # --- 3. Data Normalization ---
-    raw_rate = float(vat_rate_str.replace(',', '.')) if vat_rate_str else None
-    vat_rate = (raw_rate / 100) if (raw_rate and raw_rate > 1) else raw_rate
-    vat_amount = normalize_number(vat_amount_str)
-    net_total = normalize_number(net_total_str)
-    currency_symbol = extract_currency(vat_amount_str or net_total_str or "")
-
-    vid = (vat_id_raw or "").replace(' ', '').upper()
-    m = re.match(r'^([A-Z]{2})', vid)  # Extract country code from VAT ID
-    country = m.group(1) if m else None
-
-    logger.info(
-        f"Extracted data: [Country: {country}, VAT Rate: {vat_rate}, "
-        f"VAT Amount: {vat_amount}, Net: {net_total}]"
-    )
-
-    # --- 4. Validation Logic ---
-    allowed_rates = load_allowed_rates()
+    # Variables initialization
+    country = None
+    vat_rate = None
+    vat_amount = None
+    net_total = None
+    currency_symbol = None
+    vid = None
     reasons = []
     status = "PASS"
 
-    if not m:
-        reasons.append(f"Invalid VAT ID format: {vid}")
+    if extracted:
+        logger.info(f"✅ AI Data: {extracted}")
+        country = extracted.get("country")
+        if country and country.upper() == 'CHE':
+            country = 'CH'
+        vat_rate = extracted.get("vat_rate")
+        vat_amount = extracted.get("vat_amount")
+        net_total = extracted.get("net_total")
+        currency_symbol = extracted.get("currency")
+        vid = extracted.get("supplier_vat_id")
+    else:
+        logger.warning("⚠️ AI Extraction failed or returned None.")
         status = "FAIL"
-    elif not (vat_rate is not None and vat_amount is not None):
-        reasons.append("Missing VAT rate or VAT amount")
-        status = "FAIL"
-    elif country not in allowed_rates:
-        reasons.append(f"Country code {country} not in configuration")
-        status = "FAIL"
-    elif vat_rate not in allowed_rates.get(country, []):
-        reasons.append(f"Invalid VAT rate {vat_rate} for country {country}")
-        status = "FAIL"
+        reasons.append("AI Extraction Failed")
 
-    # Mathematical check
-    if status == "PASS" and net_total:
-        expected_vat = round(net_total * vat_rate, 2)
-        tolerance = 0.02  # Allow for small rounding differences
-        if abs(expected_vat - vat_amount) > tolerance:
-            reasons.append(
-                f"Math check failed: expected {expected_vat}, got {vat_amount}"
-            )
+    # 3. Validation Logic (Deterministic)
+    allowed_rates = load_allowed_rates()
+
+    if status != "FAIL": # Only validate if AI succeeded
+        if not vid:
+            reasons.append("Missing VAT ID")
+            status = "FAIL"
+        elif not (vat_rate is not None and vat_amount is not None):
+            reasons.append("Missing VAT rate or amount")
+            status = "FAIL"
+        elif country not in allowed_rates:
+            reasons.append(f"Country code '{country}' not in configuration")
+            status = "FAIL"
+        elif vat_rate not in allowed_rates.get(country, []):
+            reasons.append(f"Invalid VAT rate {vat_rate} for country {country}")
             status = "FAIL"
 
-    logger.info(
-        f"Validation result: {status}. Reason: {'; '.join(reasons) or 'All checks passed'}"
-    )
+        # Mathematical Check
+        if status == "PASS" and net_total:
+            expected_vat = round(net_total * vat_rate, 2)
+            # Tolerance 0.05 for rounding differences
+            if abs(expected_vat - vat_amount) > 0.05:
+                reasons.append(f"Math check failed: expected {expected_vat}, got {vat_amount}")
+                status = "FAIL"
 
-    # --- 5. Store Results ---
+    logger.info(f"Validation: {status}. Reason: {reasons}")
+
+    # 4. Store Results
     result_item = {
         'invoice_id': invoice_id,
         'country': country or "N/A",
@@ -274,33 +271,31 @@ def lambda_handler(event, context):
         'currency': currency_symbol or "N/A",
         'supplier_vat_id': vid or "N/A",
         'status': status,
-        'reason': "; ".join(reasons) or "All checks passed",
-        'ocr_text': full_text[:5000],  # Truncate text to avoid DynamoDB item size limits
+        'reason': "; ".join(reasons) or "Passed",
+        'ocr_text': full_text[:3000], # Truncate for DynamoDB limits
         'timestamp': datetime.datetime.utcnow().isoformat(),
     }
 
-    # Convert floats to Decimals for DynamoDB
+    # DynamoDB Decimal conversion
     dynamo_item = {
         k: (Decimal(str(v)) if isinstance(v, (float, int)) else v)
         for k, v in result_item.items() if v is not None
     }
 
     try:
-        # 5a. Save to DynamoDB
+        # Save to DynamoDB
         table.put_item(Item=dynamo_item)
-        logger.info(f"Result for {invoice_id} saved to DynamoDB.")
 
-        # 5b. Save to S3 (Parquet) for Athena
+        # Save to S3 (Parquet)
         save_parquet_to_s3(result_item, invoice_id)
 
-        # 5c. Send Slack notification
+        # Notify Slack
         send_slack_notification(
-            f"Invoice {invoice_id} | Country: {country} | Status: {status} | "
-            f"Reason: {result_item['reason']}"
+            f"Invoice {invoice_id} | {country} | {status} | {result_item['reason']}"
         )
 
     except Exception as e:
-        logger.error(f"Failed to store results for {invoice_id}: {e}")
+        logger.error(f"Storage failed: {e}")
         raise
 
     return {'statusCode': 200, 'body': json.dumps('Validation complete')}

@@ -33,8 +33,16 @@ st.title("📤 VCM — Invoice Upload & Validation")
 
 st.markdown(
     """
-    Upload a PDF invoice to trigger the end-to-end AWS serverless pipeline.
-    The system will perform OCR, extract data, and run compliance checks in real-time.
+    This demo showcases a cloud-native **VAT document analyzer**, built on a
+    serverless **AWS architecture** to solve key problems in financial processing:
+    **⏱️ Time delays** and **❌ costly manual errors**.
+
+    - Upload a single invoice (PDF only) from a supported country: IT, DE, FR, ES, BE, CH.
+    - Or download one of the 5 sample invoices at the end of the page
+    - Instantly see validation results
+
+    ⚠️ **Note:** This demo supports one invoice at a time.
+    **Please delete the previous upload before submitting a new one.**
     """
 )
 
@@ -42,97 +50,101 @@ st.markdown(
 uploaded_file = st.file_uploader(
     "Upload a PDF Invoice",
     type=["pdf"],
-    help="The file will be uploaded to S3 to trigger the pipeline.",
+    help="The file will be uploaded to S3 to trigger the GenAI pipeline.",
 )
 
 if uploaded_file is not None:
-    st.success(f"File selected: `{uploaded_file.name}`")
+    # Filename Validation
+    if " " in uploaded_file.name:
+        st.error(
+            f"❌ **Error:** Filename `{uploaded_file.name}` contains spaces. "
+            "Please rename it (e.g., use underscores) and upload again."
+        )
+    else:
+        # Proceed only if filename is valid
+        st.success(f"File selected: `{uploaded_file.name}`")
 
-    # Use the filename (without extension) as the unique invoice_id
-    base_filename = os.path.splitext(uploaded_file.name)[0]
-    s3_key = f"{UPLOAD_PREFIX}/{uploaded_file.name}"
-    invoice_id = base_filename
+        # Use the filename (without extension) as the unique invoice_id
+        base_filename = os.path.splitext(uploaded_file.name)[0]
+        s3_key = f"{UPLOAD_PREFIX}/{uploaded_file.name}"
+        invoice_id = base_filename
 
-    if st.button(f"🚀 Validate Invoice: `{invoice_id}`"):
-        try:
-            # --- 1. UPLOAD TO S3 ---
-            with st.spinner(f"1/3: Uploading `{uploaded_file.name}` to S3..."):
-                s3.upload_fileobj(uploaded_file, S3_BUCKET, s3_key)
-            st.success("1/3: Upload complete. Pipeline triggered.")
+        if st.button(f"🚀 Validate Invoice: `{invoice_id}`"):
+            try:
+                # --- 1. UPLOAD TO S3 ---
+                with st.spinner(f"1/3: Uploading `{uploaded_file.name}` to S3..."):
+                    s3.upload_fileobj(uploaded_file, S3_BUCKET, s3_key)
+                st.success("1/3: Upload complete. GenAI Pipeline triggered.")
 
-            # --- 2. POLLING DYNAMODB ---
-            spinner_text = (
-                f"2/3: Waiting for validation result for `{invoice_id}`... "
-                f"(Max {POLLING_TIMEOUT}s)"
-            )
-            with st.spinner(spinner_text):
-                start_time = time.time()
-                result = None
-                while time.time() - start_time < POLLING_TIMEOUT:
-                    try:
-                        response = table.get_item(Key={"invoice_id": invoice_id})
-                        if "Item" in response:
-                            result = response["Item"]
-                            break  # Found it!
-                    except ClientError as e:
-                        st.error(f"Error polling DynamoDB: {e}")
-                        break
-                    time.sleep(POLLING_INTERVAL)
-
-                if not result:
-                    warning_text = (
-                        f"Validation timed out after {POLLING_TIMEOUT}s. "
-                        "The pipeline may still be running."
-                    )
-                    st.warning(warning_text)
-                    st.stop()
-
-            st.success("2/3: Validation result received from DynamoDB.")
-
-            # --- 3. DISPLAY RESULTS ---
-            with st.spinner("3/3: Rendering results..."):
-                status = result.get("status", "UNKNOWN")
-                reason = result.get("reason", "No reason provided.")
-
-                if status == "PASS":
-                    st.balloons()
-                    st.success(f"✅ Validation Result: {status}")
-                else:
-                    st.error(f"❌ Validation Result: {status}")
-
-                st.info(f"ℹ️ Reason: {reason}")
-
-                # Display extracted data in a clean way
-                st.subheader("Extracted Data")
-                col1, col2 = st.columns(2)
-
-                vat_rate_text = (
-                    f"{result.get('vat_rate', 0) * 100}%"
-                    if result.get('vat_rate')
-                    else "N/A"
+                # --- 2. POLLING DYNAMODB ---
+                spinner_text = (
+                    f"2/3: AI Processing & Validation for `{invoice_id}`... "
+                    f"(Max {POLLING_TIMEOUT}s)"
                 )
-                vat_amount_text = (
-                    f"{result.get('currency', '')} {result.get('vat_amount', 'N/A')}"
-                )
-                net_total_text = (
-                    f"{result.get('currency', '')} {result.get('net_total', 'N/A')}"
-                )
+                with st.spinner(spinner_text):
+                    start_time = time.time()
+                    result = None
+                    while time.time() - start_time < POLLING_TIMEOUT:
+                        try:
+                            response = table.get_item(Key={"invoice_id": invoice_id})
+                            if "Item" in response:
+                                result = response["Item"]
+                                break
+                        except ClientError as e:
+                            st.error(f"Error polling DynamoDB: {e}")
+                            break
+                        time.sleep(POLLING_INTERVAL)
 
-                col1.metric("Country", result.get("country", "N/A"))
-                col2.metric("VAT ID", result.get("supplier_vat_id", "N/A"))
-                col1.metric("VAT Rate", vat_rate_text)
-                col2.metric("VAT Amount", vat_amount_text)
-                col1.metric("Net Total", net_total_text)
+                    if not result:
+                        warning_text = (
+                            f"Validation timed out after {POLLING_TIMEOUT}s. "
+                            "The AI pipeline might be cold-starting or retrying."
+                        )
+                        st.warning(warning_text)
+                        st.stop()
 
-                with st.expander("Show Full Result JSON"):
-                    st.json(result, expanded=False)
+                st.success("2/3: Validation result received from DynamoDB.")
 
-        except NoCredentialsError:
-            st.error("❌ AWS credentials not found. Configure credentials to run this app.")
-        except ClientError as e:
-            st.error(f"❌ AWS Client Error: {e.code} - {e.response['Error']['Message']}")
-        except Exception as e:
-            st.error(f"❌ An unexpected error occurred: {e}")
+                # --- 3. DISPLAY RESULTS ---
+                with st.spinner("3/3: Rendering analysis..."):
+                    status = result.get("status", "UNKNOWN")
+                    reason = result.get("reason", "No reason provided.")
+
+                    if status == "PASS":
+                        st.balloons()
+                        st.success(f"✅ Validation Result: {status}")
+                    else:
+                        st.error(f"❌ Validation Result: {status}")
+
+                    st.info(f"ℹ️ Logic Check: {reason}")
+
+                    # Display extracted data
+                    st.subheader("AI Extracted Data")
+                    col1, col2 = st.columns(2)
+
+                    # Format Values safely
+                    vat_val = result.get('vat_rate')
+                    vat_rate_text = f"{float(vat_val) * 100:.1f}%" if vat_val else "N/A"
+
+                    curr = result.get('currency', '')
+                    vat_amt = result.get('vat_amount', 'N/A')
+                    net_tot = result.get('net_total', 'N/A')
+
+                    col1.metric("Country", result.get("country", "N/A"))
+                    col2.metric("VAT ID", result.get("supplier_vat_id", "N/A"))
+                    col1.metric("VAT Rate", vat_rate_text)
+                    col2.metric("VAT Amount", f"{curr} {vat_amt}")
+                    col1.metric("Net Total", f"{curr} {net_tot}")
+
+                    with st.expander("Show Full AI JSON Output"):
+                        st.json(result, expanded=False)
+
+            except NoCredentialsError:
+                st.error("❌ AWS credentials not found. Configure credentials to run this app.")
+            except ClientError as e:
+                st.error(f"❌ AWS Client Error: {e.code} - {e.response['Error']['Message']}")
+            except Exception as e:
+                st.error(f"❌ An unexpected error occurred: {e}")
 
 # ---------- SAMPLE INVOICES ----------
 st.markdown("---")
@@ -140,15 +152,18 @@ st.subheader("📥 Download Sample Invoices")
 st.caption("Don't have an invoice? Use one of these test cases.")
 
 if os.path.exists(SAMPLE_DIR):
-    sample_files = [f for f in os.listdir(SAMPLE_DIR) if f.endswith(".pdf")]
+    sample_files = sorted([f for f in os.listdir(SAMPLE_DIR) if f.endswith(".pdf")])
 
     if sample_files:
         cols = st.columns(len(sample_files))
+
         for idx, filename in enumerate(sample_files):
-            with open(os.path.join(SAMPLE_DIR, filename), "rb") as f:
+            file_path = os.path.join(SAMPLE_DIR, filename)
+
+            with open(file_path, "rb") as f:
                 with cols[idx]:
                     st.download_button(
-                        label=filename,
+                        label=f"📄 {filename}",
                         data=f,
                         file_name=filename,
                         mime="application/pdf",

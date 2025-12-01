@@ -12,6 +12,7 @@
 **VCM (VAT Compliance Monitor)** is a production-grade, event-driven pipeline that automates the validation of European VAT invoices. The entire system is defined and deployed using **Infrastructure as Code (IaC)** with the AWS SAM Framework.
 
 This project solves a critical business problem by transforming unstructured, real-world PDF invoices **including low-quality scans** into validated, auditable, and analytics-ready records, all automatically.
+It evolves beyond traditional OCR by implementing a Hybrid **GenAI Architecture**, leveraging **AWS Bedrock** (Claude 3 Haiku) to semantically understand document layouts.
 
 ---
 
@@ -44,20 +45,27 @@ This layered design improves data quality, reliability, and usability. **[Full m
 
 ---
 
-## 🚀 How It Works (Step-by-Step)
+## 🚀 How It Works (The Intelligence Pipeline)
 
-1.  **Ingestion & Preprocessing:** A user uploads a PDF to the `raw/` prefix in the main **Invoice Bucket** (`vcm-kevin-pipeline-invoices`). This S3 event triggers a Docker-based **`preprocess-lambda`** that uses `ocrmypdf` to clean the file and apply a text layer, saving the result to the `processed/` prefix within the same bucket.
+1.  **Ingestion & Preprocessing:**
+    A user uploads a PDF to the `raw/` prefix in the **Invoice Bucket**. This S3 event triggers a Docker-based **`preprocess-lambda`** that uses `ocrmypdf` to deskew, clean noise, and apply a text layer to scanned documents, ensuring high-quality input for the AI.
 
-2.  **Extraction, Validation & Storage:** The new file in the `processed/` prefix triggers the **`textract-lambda`**. This function is the core of the pipeline and performs several actions:
-    * It uses **Amazon Textract** for intelligent OCR.
-    * It validates the extracted data against business rules.
-    * It saves the `PASS`/`FAIL` result to **Amazon DynamoDB** for real-time status checks.
-    * It saves the full, structured result to the separate **Analytics Bucket** (`vcm-config-kevin`) as a Parquet file.
-    * It sends an operational update for every invoice to **Slack**.
+2.  **Hybrid GenAI Extraction (The Core):**
+    The new file in the `processed/` prefix triggers the **`textract-lambda`**, which executes a 3-step intelligence pipeline:
+    * **Vision Layer (Textract):** Uses **Amazon Textract** to extract raw text from the document pixels.
+    * **Semantic Layer (GenAI):** Sends the raw text to **AWS Bedrock (Claude 3 Haiku)** via secure PrivateLink. The LLM intelligently identifies key entities (VAT ID, Total, Rates, Currency) regardless of the document layout.
+    * **Deterministic Guardrails:** A Python logic layer performs mathematical cross-checks (e.g., `Net Total * Rate == VAT Amount`) to validate the AI's output against strict tax rules.
 
-3.  **Critical Alerting:** A `FAIL` status written to DynamoDB triggers the **`alert-lambda`** via a DynamoDB Stream. This function sends a detailed failure notification via **Amazon SES (email)**.
+3.  **Storage & State:**
+    * Validation status (`PASS`/`FAIL`) is saved to **Amazon DynamoDB** for real-time tracking.
+    * Structured data is converted to **Parquet** and saved to the separate **Analytics Bucket** (`vcm-config-kevin`) for BI.
+    * An operational update is sent to **Slack** for monitoring.
 
-4.  **Serverless Analytics:** An **AWS Glue Crawler** catalogs the Parquet files from the Analytics Bucket, making them instantly queryable using standard SQL in **Amazon Athena**.
+4.  **Critical Alerting:**
+    A `FAIL` status written to DynamoDB triggers the **`alert-lambda`** via a DynamoDB Stream. This function sends a detailed failure notification via **Amazon SES (email)** to the finance team.
+
+5.  **Serverless Analytics:**
+    An **AWS Glue Crawler** catalogs the Parquet files from the Analytics Bucket, making them instantly queryable using standard SQL in **Amazon Athena**.
 
 ---
 
@@ -67,7 +75,7 @@ This layered design improves data quality, reliability, and usability. **[Full m
 
 2.  **Automated Preprocessing for "Dirty" PDFs:** The system solves the common problem of unreadable documents. A Docker-based Lambda function uses `ocrmypdf` to clean and apply a text layer to any incoming PDF, ensuring even scanned documents are machine-readable.
 
-3.  **AI-Powered Data Extraction:** **AWS Textract** intelligently extracts structured data (VAT IDs, amounts, dates) from the cleaned PDFs, overcoming variations in invoice layouts.
+3.  **AI-Powered Data Extraction:** **AWS Textract + AWS Bedrock (Claude 3 Haiku)** intelligently extracts structured data (VAT IDs, amounts, dates) from the cleaned PDFs, overcoming variations in invoice layouts.
 
 4.  **Data Lake & Analytics Layer:** Processed data is saved in the optimized **Parquet** format. An **AWS Glue Crawler**, also defined as code, automatically catalogs this data, making it instantly queryable via standard SQL with **Amazon Athena**.
 
@@ -94,6 +102,36 @@ A system that is:
 
 ---
 
+## 🔐 Enterprise Grade Security & Compliance (GDPR/FADP)
+
+This architecture is engineered for **Banking & Healthcare standards**, ensuring total data sovereignty. Unlike standard API integrations (e.g., public ChatGPT), this solution utilizes **AWS Bedrock** to guarantee:
+
+* **Zero Data Retention:** Under AWS Bedrock terms, input/output data is **NEVER** used to train the base foundation models. Your data remains yours.
+* **Data Sovereignty:** Inference occurs strictly within the selected AWS Region (e.g., `eu-central-1`), ensuring data never crosses geopolitical borders, compliant with **GDPR** and **Swiss FADP**.
+* **Network Isolation:** The Lambda function communicates with the AI Model via **AWS PrivateLink**, meaning sensitive invoice data never traverses the public internet.
+* **Encryption:** All data is encrypted in transit (TLS 1.2+) and at rest (KMS AES-256).
+
+### ⚖️ Legal Framework & DPA
+By utilizing the AWS Bedrock abstraction layer, this architecture adheres to:
+* **Anthropic Data Processing Addendum (DPA):** Compliant with EU SCCs (Standard Contractual Clauses).
+* **Swiss Addendum:** Specific compliance for the Swiss Federal Act on Data Protection.
+
+---
+
+## 🛡️ AI Reliability: The "Trust but Verify" Protocol
+
+How do we ensure the AI doesn't "hallucinate" financial numbers?
+We implement a **Deterministic Validation Layer** post-extraction.
+
+1.  **AI Extraction:** Claude 3 Haiku extracts the fields contextually (flexible).
+2.  **Math Cross-Check:** The Python layer strictly validates the math:
+    > `If (Net_Total * VAT_Rate) != VAT_Amount` (±0.05 tolerance) → **REJECT**
+3.  **Result:** If the math doesn't add up, the document is flagged for human review.
+
+This Hybrid approach gives us the **flexibility** of GenAI with the **safety** of deterministic code.
+
+---
+
 ## 📊 Analytics-Ready Data Lake
 
 The pipeline is designed for more than just real-time processing; it creates an **analytics-ready data lake**.
@@ -108,28 +146,40 @@ The query below successfully retrieves data from the data lake and returns the r
 
 ---
 
-## 💰 Cloud Cost Estimate (10,000 Invoices / Month)
+## 🔔 Observability & Alerting in Action
 
-This system is optimized for affordability, even at an enterprise scale.  
-All costs are based on **eu-central-1 (Frankfurt)** region, using AWS's public pricing (as of June 2025).
+The system implements a **Multi-Channel Notification Strategy** to ensure rapid incident response.
 
-### 🧮 Monthly Cost — 10,000 Invoices (Enterprise Usage)
+![Alerts Notification Example](docs/alert_example.png)
 
-| Service           | Approx. Cost | Description |
-|------------------|--------------|-------------|
-| **Textract OCR** | $15.00       | 1 page/invoice × 10,000 × $0.0015 |
-| **Lambda compute** | $0.02      | 400 ms @ 256 MB → ~1,000 GB-s |
-| **Lambda requests** | $0.002     | 10,000 × $0.20 per 1M requests |
-| **Amazon SES**   | $1.00        | 10,000 emails @ $0.10 per 1K |
-| **S3 Storage**   | ~$0.20       | PDFs + Parquet (~1 GB/month) |
-| **Glue + Athena**| ~$1.00       | 1 crawler run + ~50 queries |
-| **TOTAL**        | **~$18.25/month** | Fully serverless, 10k invoices processed monthly |
-
-> 🔍 **Textract accounts for ~90% of total cost**. All other components combined cost < $5/month.
+* **Slack (Operational Feed):** A real-time stream of every processed invoice. Used by the DevOps/Ops team to monitor throughput and general system health.
+* **Email SES (Critical Alert):** A targeted alert sent to the Finance Team **only** when a validation fails (`status: FAIL`), allowing for immediate manual intervention.
 
 ---
 
-## 🔐 Security Best Practices (Deployed in eu-central-1)
+
+## 💰 Cloud Cost Estimate (10,000 Invoices / Month)
+
+This system is optimized for affordability, even at an enterprise scale.  
+All costs are based on **eu-central-1 (Frankfurt)** region.
+
+### 🧮 Monthly Cost — 10,000 Invoices (Enterprise Usage)
+
+| Service | Approx. Cost | Description |
+| :--- | :--- | :--- |
+| **Textract OCR** | $15.00 | 1 page/invoice × 10,000 × $0.0015 |
+| **Bedrock AI** | **$4.50** | **GenAI Extraction** (Claude 3 Haiku). ~$0.00045 per invoice (Input+Output tokens). |
+| **Lambda compute** | $0.20 | Slightly higher runtime for AI calls (~1000ms avg). |
+| **Amazon SES** | $1.00 | 10,000 failure/success alerts emails. |
+| **S3 Storage** | ~$0.20 | PDFs (Raw/Processed) + Parquet Data Lake. |
+| **Glue + Athena** | ~$1.00 | 1 crawler run + ~50 analytical queries. |
+| **TOTAL** | **~$21.90 / month** | **Fully serverless, GenAI-powered pipeline.** |
+
+> 🔍 **FinOps Insight:** Even with advanced Generative AI, the cost per invoice remains **under $0.003**. The ROI compared to manual data entry (human cost) is >100x.
+
+---
+
+## 🔐 AWS Security Best Practices (Deployed in eu-central-1)
 
 | Layer     | Practice |
 |-----------|----------|
@@ -144,29 +194,6 @@ All costs are based on **eu-central-1 (Frankfurt)** region, using AWS's public p
 
 ---
 
-## 🚧 Limitations & possible solutions
-
-The current pipeline is fully functional but relies on a **Regex-based approach** for data extraction within the `textract-lambda`.  
-While effective for structured invoices, this is the main limitation when dealing with a wide variety of real-world document layouts.
-
-Since this is a **demonstration project**, the Regex solution was chosen for its simplicity, speed of implementation, and cost-effectiveness.  
-In a production-grade system, more advanced AI-driven strategies would be preferable.
-
-Two main paths could replace the Regex logic and make the platform more intelligent and format-agnostic:
-
--   **Option A: Custom Model with Amazon Comprehend**  
-    Train a custom Named Entity Recognition (NER) model to detect specific invoice fields.  
-    - ✅ **Pro:** AWS-native, data remains within the secure environment, compliance-friendly (GDPR).  
-    - ⚠️ **Trade-Off:** Must choose between:  
-        - **Real-Time Endpoint:** Low latency (seconds) but continuous hourly cost.  
-        - **Asynchronous Job:** Very cheap (pay-per-use) but adds minutes of latency.
-
--   **Option B: External LLM API (e.g., Gemini or GPT-4)**  
-    Use a Large Language Model for extraction.  
-    - ✅ **Pro:** Highest accuracy, no training required, flexible field extraction with just a prompt, real-time results.  
-    - ⚠️ **Trade-Off:** Sensitive data leaves the AWS environment, raising privacy/compliance concerns. More expensive per invoice than Comprehend async.
-
----
 
 ## 📦 Deployment
 
@@ -204,7 +231,7 @@ The entire infrastructure for this project is defined in the `sam/template.yaml`
 
 -   **IaC:** AWS SAM CLI
 -   **Compute:** AWS Lambda (Python 3.12 Runtime & Docker Container Image)
--   **AI / OCR:** AWS Textract, Amazon Comprehend
+-   **AI / OCR:** AWS Textract, AWS Bedrock (Claude 3 Haiku)
 -   **Storage:** Amazon S3, Amazon DynamoDB
 -   **Data Analytics:** AWS Glue, Amazon Athena
 -   **Alerting:** Amazon SES, Slack Webhooks
@@ -217,7 +244,7 @@ The entire infrastructure for this project is defined in the `sam/template.yaml`
 
 -   **Infrastructure as Code (IaC):** Designed and deployed a complete, multi-resource cloud application from a single, reusable AWS SAM template.
 -   **Serverless & Event-Driven Architecture:** Built a robust, scalable, and cost-efficient pipeline using S3 event triggers, Lambda functions, and DynamoDB Streams.
--   **AI/ML Integration:** Leveraged AWS Textract for intelligent document processing (OCR) to extract structured data from unstructured PDFs.
+-   **AI/ML Integration:** Leveraged AWS Textract and AWS Bedrock for intelligent document processing (OCR) to extract structured data from unstructured PDFs.
 -   **Data Engineering:** Created a data pipeline that transforms and stores data in an analytics-optimized format (Parquet) and built a data catalog with AWS Glue for querying in Amazon Athena.
 -   **CI/CD & DevOps:** Implemented a Continuous Integration workflow with GitHub Actions to automate code quality checks and testing.
 -   **Cloud Security:** Applied the principle of least privilege with specific IAM roles for each service and managed secrets securely outside of version control using parameters.

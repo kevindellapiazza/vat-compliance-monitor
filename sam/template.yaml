@@ -157,6 +157,20 @@ Resources:
             Resource: 
               - !Sub "arn:aws:s3:::${ConfigBucketName}/${AllowedRatesFileKey}"
               - !Sub "arn:aws:s3:::${ConfigBucketName}/${ParquetOutputPrefix}*"
+        # 4. Bedrock AI model access
+        - Statement:
+          - Effect: Allow
+            Action: bedrock:InvokeModel
+            Resource: arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0
+        # 4. Marketplace Subscription Check
+        - Statement:
+          - Effect: Allow
+            Action: 
+              - bedrock:InvokeModel
+              - aws-marketplace:ViewSubscriptions
+              - aws-marketplace:Subscribe
+              - aws-marketplace:Unsubscribe
+            Resource: "*"
       Events:
         PreprocessCompleteTrigger:
           Type: S3
