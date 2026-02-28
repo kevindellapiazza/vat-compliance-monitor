@@ -4,15 +4,28 @@
 [![Infrastructure as Code](https://img.shields.io/badge/IaC-AWS%20SAM-orange.svg)](https://aws.amazon.com/serverless/sam/)
 
 > An end-to-end, serverless pipeline on AWS for real-time validation of European VAT invoices. Fully deployed and managed with Infrastructure as Code.
+It evolves beyond traditional OCR by implementing a Hybrid **GenAI Architecture**, leveraging **AWS Bedrock** (Claude 3 Haiku) to semantically understand documents information.
 
 ---
 
-## 📌 Project Overview
+## 🎯 The Business Problem (Why This Project?)
 
-**VCM (VAT Compliance Monitor)** is a production-grade, event-driven pipeline that automates the validation of European VAT invoices. The entire system is defined and deployed using **Infrastructure as Code (IaC)** with the AWS SAM Framework.
+-   💸 Companies lose dozens of hours per month manually validating invoices for tax compliance.
+-   ❌ Small VAT mismatches can lead to major penalties, audit failures, or rejected tax filings.
+-   📉 Compliance processes are often fragmented across disconnected tools, creating manual verification loops and high error risk.
 
-This project solves a critical business problem by transforming unstructured, real-world PDF invoices **including low-quality scans** into validated, auditable, and analytics-ready records, all automatically.
-It evolves beyond traditional OCR by implementing a Hybrid **GenAI Architecture**, leveraging **AWS Bedrock** (Claude 3 Haiku) to semantically understand document layouts.
+As a Solution Architect, I designed VCM to showcase how automation can transform financial operations.
+
+---
+
+## ⚡ The Result
+
+A system that is:
+
+- ✅ **Smart Compliance:** flags errors in incorrectly filled invoices and confirms valid ones
+- ✅ **Scalable:** can handle hundreds of invoices per day  
+- ✅ **Cost-effective:** runs on AWS with near-zero infrastructure cost  
+- ✅ **Fully automated:** no human intervention required  
 
 ---
 
@@ -79,26 +92,6 @@ This layered design improves data quality, reliability, and usability. **[Full m
 
 4.  **Data Lake & Analytics Layer:** Processed data is saved in the optimized **Parquet** format. An **AWS Glue Crawler**, also defined as code, automatically catalogs this data, making it instantly queryable via standard SQL with **Amazon Athena**.
 
----
-
-## 🎯 Why This Matters
-
--   💸 Businesses lose dozens of hours per month manually validating invoices for tax compliance.
--   ❌ Small VAT mismatches can lead to major penalties, audit failures, or rejected tax filings.
--   📉 Most companies still rely on spreadsheets and shared drives for compliance workflows.
-
-As a data and cloud engineer, I designed VCM to showcase how automation can transform financial operations.
-
----
-
-## ⚡ The Result
-
-A system that is:
-
-- ✅ **Smart Compliance:** flags errors in incorrectly filled invoices and confirms valid ones
-- ✅ **Scalable:** can handle hundreds of invoices per day  
-- ✅ **Cost-effective:** runs on AWS with near-zero infrastructure cost  
-- ✅ **Fully automated:** no human intervention required  
 
 ---
 
