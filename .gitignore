@@ -2,8 +2,21 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+*$py.class
 .venv/
 .env
+venv/
+ENV/
+.env
+.env.*
+
+# Testing & Quality
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
 
 # AWS & SAM build artifacts
 .aws-sam/
@@ -12,6 +25,8 @@ samconfig.toml
 # macOS & VS Code
 .DS_Store
 .vscode/
+*.swp
+*.swo
 
 # Jupyter Notebooks
 .ipynb_checkpoints/
@@ -20,8 +35,9 @@ samconfig.toml
 *.pdf
 !streamlit_app/sample_invoices/*.pdf
 !tests/assets/*.pdf
+*.parquet
 
 # Misc
 *.zip
 .idea/
-.pytest_cache/
+*.log
