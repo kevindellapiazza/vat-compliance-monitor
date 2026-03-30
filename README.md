@@ -264,14 +264,8 @@ Making this external (not hardcoded) ensures scalability and maintainability.
 
 ## 🛡️ License & Use
 
-This project is published for educational and portfolio purposes only.  
-All code was written by **Kevin Della Piazza**.
+This project is proprietary and published for **educational and portfolio use only**. 
 
-You may:
-- ✅ Read and learn from this project  
-- ✅ Ask to test it as part of a job application  
+For full details on what you can and cannot do with this code, please refer to the [LICENSE.md](LICENSE.md) file.
 
-You may not:
-- ❌ Reuse the code in other portfolios, applications, or commercial tools  
-
-**All rights reserved © Kevin Della Piazza**
+**All rights reserved © 2026 Kevin Della Piazza**

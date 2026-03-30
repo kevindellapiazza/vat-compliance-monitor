@@ -1,5 +1,13 @@
-# Copyright © Kevin Della Piazza
-# For educational and portfolio use only.
+"""
+VAT Compliance Monitor (VCM) - Extraction Engine
+Version: 2.0 (March 2026)
+Architect: Kevin Della Piazza
+
+This Lambda orchestrates a hybrid extraction-validation pipeline:
+1. Vision Layer: Amazon Textract for raw OCR.
+2. Reasoning Layer: Claude 4.5 Haiku (Few-Shot) for semantic parsing.
+3. Guardrail Layer: Deterministic math & regex validation.
+"""
 
 import boto3
 import csv
@@ -12,6 +20,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import logging
 from decimal import Decimal
+import re
 
 # === Logging ===
 logger = logging.getLogger()
@@ -41,9 +50,24 @@ CACHED_SLACK_WEBHOOK_URL = None
 HTTP_POOL = urllib3.PoolManager()
 CACHED_ALLOWED_RATES = None
 
+# === VALID ID PATTER FOR EU VAT ID ===
+VAT_PATTERNS = {
+    'IT': r'^IT[0-9]{11}$',
+    'DE': r'^DE[0-9]{9}$',
+    'FR': r'^FR[A-Z0-9]{2}[0-9]{9}$',
+    'ES': r'^ES[A-Z0-9][0-9]{7}[A-Z0-9]$',
+    'CH': r'^CHE[0-9]{9}(MWST|TVA|IVA)?$',
+    'BE': r'^BE[0-9]{10}$'
+}
+
+
 # --- HELPER FUNCTIONS ---
 
 def load_allowed_rates():
+    """
+    Retrieves VAT rate configurations from S3.
+    Implements a basic in-memory cache to optimize performance.
+    """
     global CACHED_ALLOWED_RATES
     if CACHED_ALLOWED_RATES:
         return CACHED_ALLOWED_RATES
@@ -66,6 +90,10 @@ def load_allowed_rates():
         raise
 
 def get_slack_webhook():
+    """
+    Securely fetches the Slack Webhook URL from AWS Secrets Manager.
+    Uses caching to avoid repeated SecretValue calls.
+    """
     global CACHED_SLACK_WEBHOOK_URL
     if CACHED_SLACK_WEBHOOK_URL:
         return CACHED_SLACK_WEBHOOK_URL
@@ -84,6 +112,7 @@ def get_slack_webhook():
         return None
 
 def send_slack_notification(msg):
+    """Dispatches real-time alerts to Slack channel."""
     try:
         hook = get_slack_webhook()
         if hook:
@@ -96,6 +125,10 @@ def send_slack_notification(msg):
         logger.error(f"Error sending Slack notification: {e}")
 
 def save_parquet_to_s3(data: dict, key: str):
+    """
+    Persists validated data in Apache Parquet format to the Data Lake.
+    Enables high-performance analytics via Amazon Athena.
+    """
     try:
         df = pd.DataFrame([data])
         tbl = pa.Table.from_pandas(df)
@@ -110,6 +143,9 @@ def save_parquet_to_s3(data: dict, key: str):
         logger.error(f"Failed to save Parquet: {e}")
 
 def is_valid_pdf(bucket, key):
+    """
+    Ensures the file is a genuine PDF by inspecting the file header.
+    """
     try:
         # read 4 byte (Range request)
         response = s3.get_object(
@@ -125,48 +161,89 @@ def is_valid_pdf(bucket, key):
         logger.error(f"Error checking file header: {e}")
         return False
 
-# --- AI EXTRACTION ENGINE (Claude 3 Haiku) ---
+def validate_vat_format(vid,country):
+    """
+    Performs deterministic syntax validation based on national standards.
+    """
+    if not vid or not country:
+        return False
+    pattern = VAT_PATTERNS.get(country.upper())
+    if not pattern:
+        return True
+    clean_id = vid.replace(" ", "").replace(".", "").upper()
+    return bool(re.match(pattern, clean_id))
+
+
+# --- AI EXTRACTION ENGINE (Claude 4.5 Haiku) ---
 
 def extract_invoice_data_with_ai(ocr_text):
-    """
-    Uses AWS Bedrock to extract structured data from OCR text.
-    Replaces fragile Regex logic with semantic understanding.
-    """
-    # === PROMPT (Formatted to avoid E501 Line too long errors) ===
-    prompt = f"""
-    You are a financial AI. Extract these fields from the invoice text below into JSON:
-    1. supplier_vat_id: The full VAT number (e.g., IT123456789 or CHE-123.456.789).
-    2. vat_rate: The tax percentage as a decimal (e.g. 0.22). If multiple, take the main one.
-    3. vat_amount: The tax amount (numeric).
-    4. net_total: The total amount BEFORE tax (numeric).
-    5. currency: Symbol (e.g., €, $, £, CHF).
-    6. country: The 2-letter ISO country code.
-    RULE: If VAT ID starts with "CHE", country MUST be "CH".
-    Return ONLY valid JSON. If a field is missing, use null.
-    TEXT:
-    {ocr_text[:15000]}
-    """
+    # === FEW SHOT EXAMPLES ===
+    examples = """
+<examples>
+    <example>
+        <input>Fattura n. 123 - Rossi SRL - IT01234567890 - 100.00 EUR -
+        IVA 22%: 22.00 - Totale: 122.00</input>
+        <output>
+        {"supplier_vat_id": "IT01234567890", "vat_rate": 0.22, "vat_amount": 22.0,
+        "net_total": 100.0, "total_amount": 122.0, "currency": "€", "country": "IT"}
+        </output>
+    </example>
+    <example>
+        <input>CHE-999.888.777 MWST - Subtotal: 200.00 CHF -
+        Tax 7.7%: 15.40 - Total: 215.40</input>
+        <output>
+        {"supplier_vat_id": "CHE999888777", "vat_rate": 0.077, "vat_amount": 15.4,
+        "net_total": 200.0, "total_amount": 215.4, "currency": "CHF", "country": "CH"}
+        </output>
+    </example>
+</examples>
+"""
+
+    # === PROMPT ===
+    prompt_content = f"""
+{examples}
+
+<instructions>
+Extract these fields from the invoice text below into JSON:
+1. supplier_vat_id (no spaces or dots)
+2. vat_rate (decimal, e.g. 0.22)
+3. vat_amount (numeric)
+4. net_total (numeric)
+5. total_amount (numeric)
+6. currency (symbol or code)
+7. country (ISO 2-letter)
+RULE: If VAT ID starts with "CHE", country MUST be "CH".
+Return ONLY valid JSON. No preamble, no markdown.
+</instructions>
+
+<text_to_analyze>
+{ocr_text[:15000]}
+</text_to_analyze>
+"""
+
     body = json.dumps({
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": 1000,
-        "messages": [{"role": "user", "content": prompt}],
+        "system": (
+        "You are a professional financial auditor."
+        "You output only raw JSON blocks based on the examples provided."
+        ),
+        "messages": [{"role": "user", "content": prompt_content}],
         "temperature": 0
     })
 
     try:
         response = bedrock.invoke_model(
-            modelId="anthropic.claude-3-haiku-20240307-v1:0",
+            modelId="arn:aws:bedrock:eu-central-1:099220985688:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0",
             body=body
         )
-
         response_body = json.loads(response.get("body").read())
-        ai_result = response_body["content"][0]["text"]
+        ai_result = response_body["content"][0]["text"].strip()
 
-        # Clean up markdown
-        ai_result = ai_result.replace("```json", "").replace("```", "").strip()
+        if "```" in ai_result:
+            ai_result = ai_result.split("```json")[-1].split("```")[0].strip()
 
         return json.loads(ai_result)
-
     except Exception as e:
         logger.error(f"AI Extraction Failed: {e}")
         return None
@@ -211,9 +288,10 @@ def lambda_handler(event, context):
 
     # Variables initialization
     country = None
-    vat_rate = None
-    vat_amount = None
-    net_total = None
+    vat_rate = 0.0
+    vat_amount = 0.0
+    net_total = 0.0
+    total_gross = 0.0
     currency_symbol = None
     vid = None
     reasons = []
@@ -229,34 +307,57 @@ def lambda_handler(event, context):
         net_total = extracted.get("net_total")
         currency_symbol = extracted.get("currency")
         vid = extracted.get("supplier_vat_id")
+        total_gross = extracted.get("total_amount")
     else:
         logger.warning("⚠️ AI Extraction failed or returned None.")
         status = "FAIL"
         reasons.append("AI Extraction Failed")
 
-    # 3. Validation Logic (Deterministic)
+    # 3. Validation Logic (Deterministic Guardrails)
     allowed_rates = load_allowed_rates()
 
-    if status != "FAIL": # Only validate if AI succeeded
+    if status != "FAIL":
+        # --- LAYER 1: Syntax Validation (VAT ID) ---
+        # We verify that the extracted VAT ID matches the official national format using Regex.
         if not vid:
             reasons.append("Missing VAT ID")
             status = "FAIL"
-        elif not (vat_rate is not None and vat_amount is not None):
-            reasons.append("Missing VAT rate or amount")
+        elif not validate_vat_format(vid, country):
+            reasons.append(f"Invalid VAT ID format for {country}")
             status = "FAIL"
-        elif country not in allowed_rates:
-            reasons.append(f"Country code '{country}' not in configuration")
+
+        # --- LAYER 2: Business Policy Validation (VAT Rates) ---
+        # We cross-check the extracted rate against the allowed VAT rates
+        # configuration for the specific country.
+        if country not in allowed_rates:
+            reasons.append(f"Country code '{country}' not supported")
             status = "FAIL"
         elif vat_rate not in allowed_rates.get(country, []):
             reasons.append(f"Invalid VAT rate {vat_rate} for country {country}")
             status = "FAIL"
 
-        # Mathematical Check
-        if status == "PASS" and net_total:
+        # --- LAYER 3: Mathematical Validation ---
+        # Since LLMs are non-deterministic, enforce a consistent algebraic loop.
+        valid_fields = [net_total, vat_rate, vat_amount, total_gross]
+        if status == "PASS" and all(v is not None for v in valid_fields):
+
+            # Sub-check 1: Percentage Consistency (Net * Rate = VAT)
             expected_vat = round(net_total * vat_rate, 2)
-            # Tolerance 0.05 for rounding differences
             if abs(expected_vat - vat_amount) > 0.05:
-                reasons.append(f"Math check failed: expected {expected_vat}, got {vat_amount}")
+                reasons.append(f"Math Fail: Net * Rate ({expected_vat}) != VAT ({vat_amount})")
+                status = "FAIL"
+
+            # Sub-check 2: Summation Integrity (Net + VAT = Total)
+            expected_total = round(net_total + vat_amount, 2)
+            if abs(expected_total - total_gross) > 0.05:
+                reasons.append(f"Math Fail: Net + VAT ({expected_total}) != Total ({total_gross})")
+                status = "FAIL"
+
+            # Sub-check 3: Inverse Verification (Total - VAT = Net)
+            # Ensures no phantom fees were added during the process.
+            expected_net = round(total_gross - vat_amount, 2)
+            if abs(expected_net - net_total) > 0.05:
+                reasons.append(f"Math Fail: Total - VAT ({expected_net}) != Net ({net_total})")
                 status = "FAIL"
 
     logger.info(f"Validation: {status}. Reason: {reasons}")
@@ -268,6 +369,7 @@ def lambda_handler(event, context):
         'vat_rate': vat_rate,
         'vat_amount': vat_amount,
         'net_total': net_total,
+        'total_amount': total_gross,
         'currency': currency_symbol or "N/A",
         'supplier_vat_id': vid or "N/A",
         'status': status,
