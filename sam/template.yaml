@@ -118,7 +118,7 @@ Resources:
               S3Key: {Rules: [{Name: prefix, Value: raw/}, {Name: suffix, Value: .pdf}]}
     Metadata:
       DockerTag: latest
-      DockerContext: ../src/vcm-preprocess-lambda
+      DockerContext: ../docker
       Dockerfile: Dockerfile
 
   # 4. Textract Lambda (Core Logic)
@@ -161,7 +161,7 @@ Resources:
         - Statement:
           - Effect: Allow
             Action: bedrock:InvokeModel
-            Resource: "arn:aws:bedrock:eu-central-1:099220985688:inference-profile/eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+            Resource: arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-3-haiku-20240307-v1:0
         # 4. Marketplace Subscription Check
         - Statement:
           - Effect: Allow
