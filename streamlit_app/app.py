@@ -104,10 +104,11 @@ def render_smart_extraction(item):
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Row 2: Tax and Subtotal breakdown (Values pulled directly from DynamoDB)
-    c3, c4, c5 = st.columns(3)
+    c3, c4, c5, c6 = st.columns(4)
     c3.metric("Subtotal", f"{curr} {item.get('net_total', 'N/A')}")
     c4.metric("VAT Rate", item.get("vat_rate", "N/A"))
     c5.metric("VAT Amount", f"{curr} {item.get('vat_amount', 'N/A')}")
+    c6.metric("Total Amount", f"{curr} {item.get('total_amount', 'N/A')}")
 
     # Technical Deep Dive: Showing raw JSON output
     with st.expander("📝 View Full Extraction Data (JSON)", expanded=False):
@@ -131,8 +132,8 @@ def show_demo_page():
     """)
 
     # Fetching a known good example from the DynamoDB analytical store
-    demo_id = "Factura_test_1"
-    pdf_path = os.path.join(SAMPLE_DIR, "INV-1004.pdf")
+    demo_id = "Invoice_0002"
+    pdf_path = os.path.join(SAMPLE_DIR, "Invoice_0002.pdf")
 
     res = table.get_item(Key={"invoice_id": demo_id})
     if "Item" in res:
