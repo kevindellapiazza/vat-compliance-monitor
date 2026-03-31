@@ -4,7 +4,7 @@
 [![Infrastructure as Code](https://img.shields.io/badge/IaC-AWS%20SAM-orange.svg)](https://aws.amazon.com/serverless/sam/)
 
 > An end-to-end, serverless pipeline on AWS for real-time validation of European VAT invoices. Fully deployed and managed with Infrastructure as Code.  
-It evolves beyond traditional OCR by implementing a Hybrid **GenAI Architecture**, leveraging **AWS Bedrock** (Claude 3 Haiku) to semantically understand documents information.
+It evolves beyond traditional OCR by implementing a Hybrid **GenAI Architecture**, leveraging **AWS Bedrock** (Claude 4.5 Haiku) to semantically understand documents information.
 
 ---
 
@@ -42,7 +42,7 @@ Upload a sample invoice to trigger real-time processing, validation, and alerts.
 
 This diagram shows how invoices flow through the system from upload to validation and analytics.
 
-![Architecture Diagram](docs/VCMarchitecture.drawio.png)
+![Architecture Diagram](docs/VCM-architecture.png)
 
 ### Medallion layers
 The project follows the Medallion Architecture approach, structuring data into three distinct layers:
@@ -66,8 +66,8 @@ This layered design improves data quality, reliability, and usability. **[Full m
 2.  **Hybrid GenAI Extraction (The Core):**
     The new file in the `processed/` prefix triggers the **`textract-lambda`**, which executes a 3-step intelligence pipeline:
     * **Vision Layer (Textract):** Uses **Amazon Textract** to extract raw text from the document pixels.
-    * **Semantic Layer (GenAI):** Sends the raw text to **AWS Bedrock (Claude 3 Haiku)** via secure PrivateLink. The LLM intelligently identifies key entities (VAT ID, Total, Rates, Currency) regardless of the document layout.
-    * **Deterministic Guardrails:** A Python logic layer performs mathematical cross-checks (e.g., `Net Total * Rate == VAT Amount`) to validate the AI's output against strict tax rules.
+    * **Semantic Layer (GenAI):** Sends the raw text to **AWS Bedrock (Claude 4.5 Haiku)** via secure PrivateLink. The LLM intelligently identifies key entities (VAT ID, Total, Rates, Currency) regardless of the document layout.
+    * **Deterministic Guardrails:** A Python logic layer performs mathematical cross-checks (e.g., `Net_Amount + VAT_Amount == Total_Amount`) to validate the AI's output against strict tax rules.
 
 3.  **Storage & State:**
     * Validation status (`PASS`/`FAIL`) is saved to **Amazon DynamoDB** for real-time tracking.
@@ -88,7 +88,7 @@ This layered design improves data quality, reliability, and usability. **[Full m
 
 2.  **Automated Preprocessing for "Dirty" PDFs:** The system solves the common problem of unreadable documents. A Docker-based Lambda function uses `ocrmypdf` to clean and apply a text layer to any incoming PDF, ensuring even scanned documents are machine-readable.
 
-3.  **AI-Powered Data Extraction:** **AWS Textract + AWS Bedrock (Claude 3 Haiku)** intelligently extracts structured data (VAT IDs, amounts, dates) from the cleaned PDFs, overcoming variations in invoice layouts.
+3.  **AI-Powered Data Extraction:** **AWS Textract + AWS Bedrock (Claude 4.5 Haiku)** intelligently extracts structured data (VAT IDs, amounts, dates) from the cleaned PDFs, overcoming variations in invoice layouts.
 
 4.  **Data Lake & Analytics Layer:** Processed data is saved in the optimized **Parquet** format. An **AWS Glue Crawler**, also defined as code, automatically catalogs this data, making it instantly queryable via standard SQL with **Amazon Athena**.
 
@@ -113,16 +113,15 @@ By utilizing the AWS Bedrock abstraction layer, this architecture adheres to:
 
 ## 🛡️ AI Reliability: The "Trust but Verify" Protocol
 
-How do we ensure the AI doesn't "hallucinate" financial numbers?
-We implement a **Deterministic Validation Layer** post-extraction.
+To prevent "hallucinations" in financial data, the system implements a post-extraction **deterministic validation protocol**.
 
-1.  **AI Extraction:** Claude 3 Haiku extracts the fields contextually (flexible).
-2.  **Math Cross-Check:** The Python layer strictly validates the math:
-    > `If (Net_Total * VAT_Rate) != VAT_Amount` (±0.05 tolerance) → **REJECT**
-3.  **Result:** If the math doesn't add up, the document is flagged for human review.
+1.  **Semantic Extraction**: **Claude 4.5 Haiku** handles the semantic interpretation, identifying key entities (VAT IDs, Net Total, VAT Amount, Total Amount) regardless of the invoice layout or language.
+2.  **Hard-coded Guardrails**: Extracted data passes through a Python validation engine that applies two rigorous checks:
+    * **Mathematical Integrity**: The invoice total is recalculated. If `(Net_Amount + VAT_Amount) != Total_Amount` (±0.05 tolerance), the document is flagged.
+    * **Regulatory Compliance (Regex)**: The supplier’s VAT ID is verified against country-specific Regex patterns (IT, ES, DE, FR, CH, BE) to ensure formal validity.
+3.  **Automated Rejection**: If any check fails, the pipeline status immediately shifts to `FAIL`, notifying the finance team for manual review via Email (SES).
 
-This Hybrid approach gives us the **flexibility** of GenAI with the **safety** of deterministic code.
-
+This hybrid approach ensures the **flexibility** of GenAI in document interpretation while maintaining the **safety** of deterministic code for tax and legal compliance.
 ---
 
 ## 📊 Analytics-Ready Data Lake
@@ -161,7 +160,7 @@ All costs are based on **eu-central-1 (Frankfurt)** region.
 | Service | Approx. Cost | Description |
 | :--- | :--- | :--- |
 | **Textract OCR** | $15.00 | 1 page/invoice × 10,000 × $0.0015 |
-| **Bedrock AI** | **$4.50** | **GenAI Extraction** (Claude 3 Haiku). ~$0.00045 per invoice (Input+Output tokens). |
+| **Bedrock AI** | **$4.50** | **GenAI Extraction** (Claude 4.5 Haiku). ~$0.00045 per invoice (Input+Output tokens). |
 | **Lambda compute** | $0.20 | Slightly higher runtime for AI calls (~1000ms avg). |
 | **Amazon SES** | $1.00 | 10,000 failure/success alerts emails. |
 | **S3 Storage** | ~$0.20 | PDFs (Raw/Processed) + Parquet Data Lake. |
@@ -224,7 +223,7 @@ The entire infrastructure for this project is defined in the `sam/template.yaml`
 
 -   **IaC:** AWS SAM CLI
 -   **Compute:** AWS Lambda (Python 3.12 Runtime & Docker Container Image)
--   **AI / OCR:** AWS Textract, AWS Bedrock (Claude 3 Haiku)
+-   **AI / OCR:** AWS Textract, AWS Bedrock (Claude 4.5 Haiku)
 -   **Storage:** Amazon S3, Amazon DynamoDB
 -   **Data Analytics:** AWS Glue, Amazon Athena
 -   **Alerting:** Amazon SES, Slack Webhooks
